@@ -22,6 +22,9 @@ setup(
         ],
     },
     entry_points={
-        "console_scripts": ["go_to_point = go_to_point.send_message:main"],
+        "console_scripts": [
+            "go_to_point = go_to_point.send_message:main",
+            "slam_exploration = freato.slam_exploration:main",
+        ],
     },
 )

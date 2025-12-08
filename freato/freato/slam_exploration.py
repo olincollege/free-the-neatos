@@ -10,10 +10,15 @@ class SLAM_Exploration(Node):
         # Parameters to change
         self.map_topic_name = '/map'
         self.frontiers_topic_name = 'NAME'
-        self.robot_width = 64
+        self.robot_width = 8
+        lower_empty_cell_percent = 30
+        upper_empty_cell_percent = 95
 
         # Node variables
-        self.ranked_frontier_coords:list[tuple[int,int]]
+
+        # an array of coordinates followed
+        self.dtype = [('row',int),('col',int),('empty_percent',float)]
+        self.ranked_frontier_coords = np.array([], dtype=self.dtype)
         
         # Circular mask of the space needed for robot to fit in any orientation
         self.CIRCLE_MASK = np.ones((self.robot_width,self.robot_width), dtype=bool)        
@@ -23,7 +28,11 @@ class SLAM_Exploration(Node):
                 cell[...] = (origin-itr.multi_index[0]) ** 2 + (origin-itr.multi_index[1]) ** 2 < (float(self.robot_width)/2) ** 2
                 print(cell)
         print(self.CIRCLE_MASK)
-            
+        self.CIRCLE_CELL_COUNT = np.sum(self.CIRCLE_MASK)
+        self.LOWER_EMPTY_CELL_COUNT = int(self.CIRCLE_CELL_COUNT*lower_empty_cell_percent/100)
+        self.UPPER_EMPTY_CELL_COUNT = int(self.CIRCLE_CELL_COUNT*upper_empty_cell_percent/100)
+        print(self.LOWER_EMPTY_CELL_COUNT, self.UPPER_EMPTY_CELL_COUNT)
+        print(self.CIRCLE_CELL_COUNT)
 
         # Subscriber to map topic: calls function to update frontiers
         self.map_subscriber = self.create_subscription(
@@ -48,41 +57,44 @@ class SLAM_Exploration(Node):
         start_time = self.get_clock().now().nanoseconds
         self.get_logger().info("Updating frontiers list")
 
+        self.ranked_frontier_coords = np.array([],dtype=self.dtype)
+
         map_grid = np.array(msg.data).reshape((msg.info.height,msg.info.width))
         print(map_grid.shape)
 
         var = 0
-        itr = np.nditer(map_grid[:map_grid.shape[0]-self.robot_width][:map_grid.shape[1]-self.robot_width],flags=['multi_index'])
+
+
+        itr = np.nditer(map_grid[:map_grid.shape[0]-self.robot_width,:map_grid.shape[1]-self.robot_width],flags=['multi_index'])
         for i in itr:
-            print("start location",itr.multi_index)
+            empty_cell_count = 0
+            #print("start location",itr.multi_index)
             initial_zero = itr.multi_index[0]
             initial_one = itr.multi_index[1]
             additional_0 = itr.multi_index[0]+self.robot_width
             additional_1 = itr.multi_index[1]+self.robot_width
-            print(itr.multi_index[0])
-            print(itr.multi_index[1])
-            print(initial_zero)
-            print(initial_one)
-            print(additional_0)
-            print(additional_1)
-
-            partial_grid = map_grid[initial_zero:additional_0][initial_one:additional_1]
-            print("map grid",map_grid.shape)
-            partial_grid_2 = map_grid[0:64:1][1:64:1]
+            partial_grid = map_grid[initial_zero:additional_0,initial_one:additional_1]
             
-            print("size of partial grid",partial_grid.shape, partial_grid_2.shape)
+            # print("size of partial grid",partial_grid.shape)
             mask_itr = np.nditer(partial_grid, flags=['multi_index'])
-            
             # mask_itr = np.nditer(map_grid[itr.multi_index[0]:itr.multi_index[0]+self.robot_width][itr.multi_index[1]:itr.multi_index[1]+self.robot_width], flags=['multi_index'])
             for cell in mask_itr:
-                print(mask_itr.multi_index)
-                print(cell, type(cell))
-                if self.CIRCLE_MASK[mask_itr.multi_index[0]][mask_itr.multi_index[1]] and (cell == 100):
-                    break;
-                else:
-                    var += 1
-        print(var)
+                #print(mask_itr.multi_index)
+                #print(cell, type(cell))
+                if (self.CIRCLE_MASK[mask_itr.multi_index[0]][mask_itr.multi_index[1]]):
+                    if (cell == 100):
+                        #print("break")
+                        break
+                    else:
+                        if (cell == 0):
+                            empty_cell_count += 1
+            if (self.LOWER_EMPTY_CELL_COUNT < empty_cell_count < self.UPPER_EMPTY_CELL_COUNT):
+                print(itr.multi_index[0],itr.multi_index[1],float(empty_cell_count)/self.CIRCLE_CELL_COUNT)
+                self.ranked_frontier_coords = np.append(self.ranked_frontier_coords,np.array([(itr.multi_index[0],itr.multi_index[1],float(empty_cell_count)/float(self.CIRCLE_CELL_COUNT))],dtype=self.dtype))
 
+        self.ranked_frontier_coords.sort(order='empty_percent')
+        with np.printoptions(threshold=np.inf):
+            print(self.ranked_frontier_coords)
         duration = str(float(self.get_clock().now().nanoseconds - start_time)/1_000_000_000)
         _ = self.get_logger().info("List updated in %s seconds" % duration)
 

@@ -1,8 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from icp import tf_from_icp as tf_icp
-from icp_class import ICP_2D
-from icp_test_func import Align2D
+#from icp_test_func import Align2D
 
 def test_icp(rotation, translation):
     """
@@ -24,13 +23,16 @@ def test_icp(rotation, translation):
     scan_A_homogeneous = np.hstack([scan_A, np.ones((scan_A.shape[0], 1))])
     scan_B_homogeneous = np.hstack([scan_B, np.ones((scan_B.shape[0], 1))])
 
-    aligner = Align2D(scan_B_homogeneous, scan_A_homogeneous, np.eye(3))
+    #aligner = Align2D(scan_B_homogeneous, scan_A_homogeneous, np.eye(3))
     #T = aligner.AlignICP(50, 1e-6)
 
     T = tf_icp(scan_B, scan_A, max_iterations=100, tolerance=1e-12)
 
+    # print estimated results
     print("Estimated rotation:\n", T[0:2,0:2])
     print("Estimated translation:\n", T[0:2,2])
+
+    # compensate for reference frame difference
     print("\nExpected rotation:\n", np.linalg.inv(np.array([
         [np.cos(np.deg2rad(rotation)), -np.sin(np.deg2rad(rotation))],
         [np.sin(np.deg2rad(rotation)),  np.cos(np.deg2rad(rotation))]

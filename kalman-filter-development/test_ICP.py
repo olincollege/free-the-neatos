@@ -55,7 +55,7 @@ def generate_scan_A():
 
     # rectangular room
     xs = np.linspace(-4, 4, 120)
-    pts += [[x, 4] for x in xs]     # top wall
+    #pts += [[x, 4] for x in xs]     # top wall
     pts += [[x, -4] for x in xs]    # bottom wall
     ys = np.linspace(-4, 4, 120)
     pts += [[-4, y] for y in ys]    # left wall
@@ -66,12 +66,12 @@ def generate_scan_A():
     # pts += [[1 + 1.0*np.cos(t), 1 + 1.0*np.sin(t)] for t in theta]
 
     # block
-    # xs = np.linspace(-1.5, -0.5, 40)
-    # ys = np.linspace(0.5, 1.5, 40)
-    # pts += [[xs[i], 0.5] for i in range(40)]
-    # pts += [[xs[i], 1.5] for i in range(40)]
-    # pts += [[-1.5, ys[i]] for i in range(40)]
-    # pts += [[-0.5, ys[i]] for i in range(40)]
+    xs = np.linspace(-1.5, -0.5, 40)
+    ys = np.linspace(0.5, 1.5, 40)
+    pts += [[xs[i], 0.5] for i in range(40)]
+    #pts += [[xs[i], 1.5] for i in range(40)]
+    #pts += [[-1.5, ys[i]] for i in range(40)]
+    pts += [[-0.5, ys[i]] for i in range(40)]
     
 
     return np.array(pts)
@@ -92,32 +92,4 @@ def generate_scan_B(scan_A, rotation, translation):
     return scan_B
 
 if __name__ == "__main__":
-    test_icp(-5, [0.0, -0.2])
-    
-    # scan_A = generate_scan_A()
-    # scan_B = generate_scan_B(scan_A)
-
-    # # Convert to homogeneous coordinates
-    # scan_A_homogeneous = np.hstack([scan_A, np.ones((scan_A.shape[0], 1))])
-    # scan_B_homogeneous = np.hstack([scan_B, np.ones((scan_B.shape[0], 1))])
-
-    # aligner = Align2D(scan_A_homogeneous, scan_B_homogeneous, np.eye(3))
-    # T = aligner.AlignICP(50, 1e-6)
-
-    # #T = tf_icp(scan_B, scan_A, max_iterations=50, tolerance=1e-6)
-    
-    # print("Estimated rotation:\n", T[0:2,0:2])
-    # print("Estimated translation:\n", T[0:2,2])
-    # print("\nExpected rotation:\n", np.array([
-    #     [np.cos(np.deg2rad(5)), -np.sin(np.deg2rad(5))],
-    #     [np.sin(np.deg2rad(5)),  np.cos(np.deg2rad(5))]
-    # ]))
-    # print("Expected translation:\n", np.array([0.4, -0.2]))
-    
-    # plt.figure()
-    # plt.scatter(scan_A[:,0], scan_A[:,1], s=1, label='Scan A (target)', c='blue')
-    # plt.scatter(scan_B[:,0], scan_B[:,1], s=1, label='Scan B (source)', c='red')
-    # plt.axis('equal')
-    # plt.legend()
-    # plt.title("Original Scans")
-    # plt.show()
+    test_icp(-10, [0.0, -0.2])

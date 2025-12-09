@@ -10,18 +10,17 @@ def tf_from_icp(source, target, max_iterations=20, tolerance=1e-6):
         source: Nx2 array representing the source 2D point cloud.
         target: Nx2 array representing the target 2D point cloud.
         max_iterations: maximum number of ICP iterations.
-        tolerance: convergence tolerance.
+        tolerance: convergence tolerance based on change in mean squared error.
     
     Returns:
-        R: 2x2 array representing the rotation matrix
-        t: 2D array representing the translation vector.
+        T: 3x3 array representing the transformation matrix from source to target.
     """
 
     # copy to not overrite caller data
     src = source.copy()
     tgt = target.copy()
 
-    target_tree = KDTree(tgt)
+    target_tree = KDTree(tgt) # build kd-tree for target point cloud
     
     Tmat = np.eye(3)  # initialize total transformation matrix
 
@@ -37,16 +36,15 @@ def tf_from_icp(source, target, max_iterations=20, tolerance=1e-6):
         # align source to target via SVD
         Tmat_new = alignSVD(src_matched, tgt_matched)
 
-        #Tmat = np.dot(Tmat, Tmat_new)
+        # accumulate transformation
         Tmat = Tmat_new @ Tmat
 
         # transform full source point cloud
         ones = np.ones((src.shape[0], 1))
         src_stacked = np.hstack((src, ones)) # create Nx3 to apply transformation
         src_tf = (Tmat @ src_stacked.T).T[:, 0:2] # results in Nx2 array
-        #src_tf = np.dot(src, Tmat.T)
 
-        # find mean squared error between corresponding transformed source points and target points
+        # find mean squared error between corresponding matched transformed source points and target points
         new_err = 0
         for i, idx_val in enumerate(idx):
             if idx_val != -1:
@@ -75,6 +73,7 @@ def findCorrespondences(source, target, target_tree):
         matched_source: Nx2 array representing the matched source points.
         matched_target: Nx2 array representing the corresponding closest 
                         target points.
+        idx: list of indices of the closest target points for each source point.
     """
     
     # query kd-tree for closest points
@@ -84,18 +83,18 @@ def findCorrespondences(source, target, target_tree):
     unique = False
     while not unique:
         unique = True
-        for i in range(len(idx)):
+        for i in range(len(idx)): # sort through each source point
             if idx[i] == -1:
                 continue
-            for j in range(i+1,len(idx)):
-                if idx[i] == idx[j]:
-                    if dist[i] < dist[j]:
+            for j in range(i+1,len(idx)): # compare to every other source point
+                if idx[i] == idx[j]: # if identical match exists...
+                    if dist[i] < dist[j]: # keep match with closer distance
                         idx[j] = -1
                     else:
                         idx[i] = -1
                         break
 
-    # build array of nearest neighbor target points and remove unmatched source points
+    # build array of nearest neighbor target points and corresponding source points
     valid_src_pts = []
     valid_tgt_pts = []
     for i, idx_val in enumerate(idx):
@@ -135,11 +134,9 @@ def alignSVD(matched_source, matched_target):
     U, _, Vt = np.linalg.svd(M)
 
     # compute rotation R and translation t from svd(M)
-    #R = np.dot(U, Vt)
     R = U @ Vt
 
     t = tgt_centroid - R @ src_centroid
-    #t = tgt_centroid - np.dot(R, src_centroid)
 
     # formatting transformation matrix T
     Tmat = np.eye(3)

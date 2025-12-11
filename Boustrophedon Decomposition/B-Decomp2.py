@@ -1,22 +1,72 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-#Sample Occupancy Grid (Comment out and take map from Lidar)
-
-
 
 def b_decomp(map):
     """
     Run Boustrophedon Decomposition on Occupancy Map from Lidar
     will generate path
         
-    Input:
+    Inputs:
         map: occupancy grid (0 is free, 100 is occupied)
 
     Output:
         path: path (list of points) to traverse the map, hitting all the area
     """
-    
+    print(get_col_intervals(10, map))
+def build_bd_cells(map):
+    """
+    Build the BD cells by matching free areas in columns to adjacent columns
+
+    Inputs:
+        map: occupancy grid
+    Outputs:
+        cells: list of lists of 3 tuples
+        tuple format (column, start, end)
+        example of one cell
+            [
+            (0, 1, 4),   # column 0, rows 1 to 3 are free
+            (1, 2, 5),   # column 1, rows 2 to 4 are free
+            (2, 2, 4)    # column 2, rows 2 to 3 are free
+            ]
+        
+    """
+
+def get_col_intervals(col, map):
+    """
+    Get the intervals of free space for a column
+
+    Inputs:
+        col: column index to search for intervals
+
+    Outputs:
+        intervals: list of tuples with start and end indexes for intervals
+                   of free space
+                    For obstacle 5 to 9
+                   [(3, 5), (10, 20)]
+                   [(start, end), (start, end)]
+    """
+    intervals = []
+    start = None
+    end = None
+    column = map[:, col]
+    switch = False #false --> looking for start
+                   #true --> looking for end
+
+    for i in range(map.shape[0]):
+        if switch: #looking for end
+            if (column[i] == 0)&(column[i+1] == 1):
+                end = i+1
+                intervals.append((start, end))
+                switch = False
+
+        else: #looking for start
+            if column[i] == 0:
+                start = i
+                switch = True
+
+    return intervals
+
 def sample_map():
     """
     Generate a sample occupancy grid (map)
@@ -25,7 +75,24 @@ def sample_map():
         map: occupancy grid (0 is free, 100 is occupied)
     """
 
+    h = 20 #height
+    w = 30 #width
+    map = np.zeros((h, w), dtype=np.int32)
+    # Add obstacles
+    map[0:h, 0] = 1#00 #left wall
+    map[0:h, w-1] = 1#00 #right wall
+    map[0, 1:w-1] = 1#00 #right wall
+    map[h-1, 1:w-1] = 1#00 #right wall
 
 
+    map[5:10, 10:11] = 1#00 #obstacle 1
+    map[11:12, 5:15] = 1#00 #obstacle 2
+    map[18:19, 1:10] = 1#00 #obstacle 3
+    map[5:8, 21:24] = 1#00 #obstacle 4
+    print(map) #vis map
+    return map
+
+
+sample = sample_map()
 if __name__ == "__main__":
-    b_decomp()
+    b_decomp(sample)

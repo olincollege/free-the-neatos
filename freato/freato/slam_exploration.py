@@ -1,6 +1,10 @@
+from numpy.ma.core import MaskedArrayFutureWarning
 import rclpy # ros2 python
 from rclpy.node import Node # ros node
 from nav_msgs.msg import OccupancyGrid # SLAM map ros message type
+from nav2_msgs.msg import ParticleCloud, Particle # For publishing frontiers to rviz
+from geometry_msgs.msg import Pose, Point
+from rclpy.qos import qos_profile_sensor_data
 import numpy as np
 
 class SLAM_Exploration(Node):
@@ -10,6 +14,8 @@ class SLAM_Exploration(Node):
         # Parameters to change
         self.map_topic_name = '/map'
         self.frontiers_topic_name = 'NAME'
+        self.map_frame = "map" # Name of map coordinate frame
+        self.particle_cloud_name = 'particle_cloud'
         self.robot_width = 8
         lower_empty_cell_percent = 30
         upper_empty_cell_percent = 95
@@ -26,13 +32,13 @@ class SLAM_Exploration(Node):
         with np.nditer(self.CIRCLE_MASK, flags=['multi_index'], op_flags=['writeonly']) as itr:
             for cell in itr:
                 cell[...] = (origin-itr.multi_index[0]) ** 2 + (origin-itr.multi_index[1]) ** 2 < (float(self.robot_width)/2) ** 2
-                print(cell)
+                # print(cell)
         print(self.CIRCLE_MASK)
         self.CIRCLE_CELL_COUNT = np.sum(self.CIRCLE_MASK)
         self.LOWER_EMPTY_CELL_COUNT = int(self.CIRCLE_CELL_COUNT*lower_empty_cell_percent/100)
         self.UPPER_EMPTY_CELL_COUNT = int(self.CIRCLE_CELL_COUNT*upper_empty_cell_percent/100)
-        print(self.LOWER_EMPTY_CELL_COUNT, self.UPPER_EMPTY_CELL_COUNT)
-        print(self.CIRCLE_CELL_COUNT)
+        print("Lower and upper empty cell count boundaries for frontier determination:", self.LOWER_EMPTY_CELL_COUNT, self.UPPER_EMPTY_CELL_COUNT)
+        print("out of total number of cells:", self.CIRCLE_CELL_COUNT)
 
         # Subscriber to map topic: calls function to update frontiers
         self.map_subscriber = self.create_subscription(
@@ -40,10 +46,9 @@ class SLAM_Exploration(Node):
             self.map_topic_name,
             self.update_frontiers,
             10 )
-        # Publisher for ranked list of frontier coordinates
-        # self.frontiers_publisher = self.create_publisher(TYPE,
-        # 'self.frontiers_topic_name'
-        # , 10)
+        # Publisher for rviz2 visualization of frontier coordinates
+        self.frontiers_publisher = self.create_publisher(ParticleCloud,
+        self.particle_cloud_name, qos_profile_sensor_data)
         
         
     def update_frontiers(self,msg):
@@ -89,14 +94,28 @@ class SLAM_Exploration(Node):
                         if (cell == 0):
                             empty_cell_count += 1
             if (self.LOWER_EMPTY_CELL_COUNT < empty_cell_count < self.UPPER_EMPTY_CELL_COUNT):
-                print(itr.multi_index[0],itr.multi_index[1],float(empty_cell_count)/self.CIRCLE_CELL_COUNT)
+                #print(itr.multi_index[0],itr.multi_index[1],float(empty_cell_count)/self.CIRCLE_CELL_COUNT)
                 self.ranked_frontier_coords = np.append(self.ranked_frontier_coords,np.array([(itr.multi_index[0],itr.multi_index[1],float(empty_cell_count)/float(self.CIRCLE_CELL_COUNT))],dtype=self.dtype))
 
         self.ranked_frontier_coords.sort(order='empty_percent')
         with np.printoptions(threshold=np.inf):
             print(self.ranked_frontier_coords)
+            # Remember to convert them!!!!!!!!!!!!
+            self.publish_frontiers(self.ranked_frontier_coords, msg.header.stamp, msg.info)
         duration = str(float(self.get_clock().now().nanoseconds - start_time)/1_000_000_000)
         _ = self.get_logger().info("List updated in %s seconds" % duration)
+
+    def publish_frontiers(self, frontiers, timestamp, map_info):
+        msg = ParticleCloud()
+        msg.header.frame_id = self.map_frame
+        msg.header.stamp = timestamp
+        for frontier in frontiers:
+            # TODO: Turn into method to offset by the correct amount
+            frontier_pose = Pose(position=Point(x=map_info.origin.position.x + (0.5 + self.robot_width/2 + float(frontier['col']))*map_info.resolution,y=map_info.origin.position.y + (0.5 + self.robot_width/2 + float(frontier['row']))*map_info.resolution,z=0.0))
+            msg.particles.append(Particle(pose=frontier_pose))
+            self.frontiers_publisher.publish(msg)
+            
+            
 
 def main(args=None):
     """Boilerplate main method to run the ros2 node

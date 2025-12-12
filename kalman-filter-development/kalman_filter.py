@@ -42,34 +42,36 @@ class ExtendedKalmanFilter(Node):
         # create timer that runs main loop at the set interval dt
         self.timer = self.create_timer(self.dt, self.main_loop)
 
+        self.X = X_init
+        self.P = P_init
+
     def main_loop(self):
         """
         Main loop of the EKF.
 
         """
-        while rclpy.ok():
-            
-            if self.scan_to_process is None:
-                return # skip if no scan to process
-            else:
-                # if valid scan received, process it
-                processed_scan = self.process_scan(self.scan_to_process)
-            
-            self.scan_to_process = None # reset scan after processing
+        
+        if self.scan_to_process is None:
+            return # skip if no scan to process
+        
+        # if valid scan received, process it
+        processed_scan = self.process_scan(self.scan_to_process)
+        
+        self.scan_to_process = None # reset scan after processing
 
-            # get control input (odometry)
-            u = self.get_odometry_control() # placeholder for odometry control input
+        # get control input (odometry)
+        u = self.get_odometry_control() # placeholder for odometry control input
 
-            # prediction step
-            X_pred_next, P_pred_next = self.prediction(self.X, u, self.P)
+        # prediction step
+        X_pred_next, P_pred_next = self.prediction(self.X, u, self.P)
 
-            # get measurement (scan to map ICP)
-            X_measured = self.scan_to_map_ICP(processed_scan, X_pred_next)
+        # get measurement (scan to map ICP)
+        X_measured = self.scan_to_map_ICP(processed_scan, X_pred_next)
 
-            # correction step
-            self.X, self.P = self.correction(X_measured, X_pred_next, P_pred_next)
+        # correction step
+        self.X, self.P = self.correction(X_measured, X_pred_next, P_pred_next)
 
-            self.pose_publisher.publish(self.format_pose_msg(self.X, self.P))
+        self.pose_publisher.publish(self.format_pose_msg(self.X, self.P))
 
     def prediction(self, X, u, P):
         """
@@ -101,11 +103,13 @@ class ExtendedKalmanFilter(Node):
                       [0, 0, 1]])
         
         # Jacobian of the motion model wrt control input
-        L = np.array([[np.cos(X[2]), 0],
-                      [np.sin(X[2]), 0],
-                      [0, 1]])
+        L = np.array([[self.dt * np.cos(X[2]), 0],
+                      [self.dt * np.sin(X[2]), 0],
+                      [0, self.dt]])
 
-        W = np.diag([0.02**2, 0.02**2])  # control noise covariance, tune as needed
+        sigma_v = 0.05  # m/s
+        sigma_w = np.deg2rad(5)  # rad/s
+        W = np.diag([sigma_v**2, sigma_w**2]) # control noise covariance, tune as needed
 
         Q = L @ W @ L.T  # process noise covariance
 
@@ -128,6 +132,7 @@ class ExtendedKalmanFilter(Node):
 
         H = np.eye(3)  # measurement matrix
         y = X_measured - (H @ X_pred_next)  # measurement residual
+        y[2] = (y[2] + np.pi) % (2 * np.pi) - np.pi  # normalize angle difference
 
         R = np.diag([0.05**2, 0.05**2, (np.deg2rad(4))**2]) # measurement noise covariance, tune as needed
         S = H @ P_pred_next @ H.T + R
@@ -199,8 +204,8 @@ class ExtendedKalmanFilter(Node):
                 continue
 
             # convert to Cartesian coordinates in laser frame
-            lx.append(r_i * math.cos(np.deg2rad(theta_i)) - 0.08)  # account for laser offset
-            ly.append(r_i * math.sin(np.deg2rad(theta_i)))
+            lx.append(r_i * math.cos(theta_i) - 0.08)  # account for laser offset
+            ly.append(r_i * math.sin(theta_i))
 
         scan = np.vstack((lx, ly)).T  # Nx2 array
 

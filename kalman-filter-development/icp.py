@@ -1,7 +1,8 @@
 import numpy as np
 from scipy.spatial import KDTree
+from sklearn.neighbors import NearestNeighbors
 
-def tf_from_icp(source, target, max_iterations=20, tolerance=1e-6):
+def tf_from_icp(source, target, T_init, max_iterations=20, tolerance=1e-6):
     """
     Performs iterative closest point (ICP) to align the source scan to the 
     target scan in order to find the best rigid transformation between the 2.
@@ -20,9 +21,10 @@ def tf_from_icp(source, target, max_iterations=20, tolerance=1e-6):
     src = source.copy()
     tgt = target.copy()
 
-    target_tree = KDTree(tgt) # build kd-tree for target point cloud
+    #target_tree = KDTree(tgt) # build kd-tree for target point cloud
+    target_tree = NearestNeighbors(n_neighbors=1, algorithm="ball_tree").fit(tgt)
     
-    Tmat = np.eye(3)  # initialize total transformation matrix
+    Tmat = T_init  # initialize total transformation matrix
 
     mean_sq_error = 1.0e6  # initialize error as large number
     delta_err = 1.0e6    # change in error (used in stopping condition)
@@ -77,7 +79,8 @@ def findCorrespondences(source, target, target_tree):
     """
     
     # query kd-tree for closest points
-    dist, idx = target_tree.query(source)
+    #dist, idx = target_tree.query(source)
+    dist, idx = target_tree.kneighbors(source)
 
     # remove duplicate matches
     unique = False

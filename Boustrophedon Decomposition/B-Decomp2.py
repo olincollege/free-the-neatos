@@ -31,6 +31,49 @@ def build_bd_cells(map):
             ]
         
     """
+    cells = []
+    current_cells = []
+
+    #each column in map
+    for col in range(map.shape[1]):
+        intervals = get_col_intervals(col)
+        new_cells = []
+        #each interval of free space in the column
+        for interval in intervals:
+            matched = False
+            #check compatibility with current cells (do they overlap?)
+            for cell in current_cells:
+                #unpack previous column cells
+                prev_col = cell[-1][0]
+                prev_start = cell[-1][1]
+                prev_end = cell[-1][2]
+
+                #Do the current interval and previous overlap?
+                if not (interval[1] <= prev_start or interval[0] >= prev_end):
+                    #add cell to new cells
+                    cell.append((col, interval[0], interval[1]))
+                    new_cells.append(cell)
+                    matched = True
+                    break
+
+            #No matches??? ;)
+            if not matched:
+                #Add new cell
+                new_cell = [(col, interval[0], interval[1])]
+                cells.append(new_cell)
+                new_cells.append(new_cell)
+
+        #Update cells from this column
+        current_cells = new_cells
+
+
+
+
+
+
+
+
+
 
 def get_col_intervals(col, map):
     """

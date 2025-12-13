@@ -81,6 +81,8 @@ def findCorrespondences(source, target, target_tree):
     # query kd-tree for closest points
     #dist, idx = target_tree.query(source)
     dist, idx = target_tree.kneighbors(source)
+    dist = dist.ravel()
+    idx = idx.ravel()
 
     # remove duplicate matches
     unique = False
@@ -105,8 +107,8 @@ def findCorrespondences(source, target, target_tree):
             valid_tgt_pts.append(target[idx_val, :])
             valid_src_pts.append(source[i, :])
 
-    matched_src = np.array(valid_src_pts)
-    matched_tgt = np.array(valid_tgt_pts)
+    matched_src = np.array(valid_src_pts).reshape(-1,2)
+    matched_tgt = np.array(valid_tgt_pts).reshape(-1,2)
 
     return matched_src, matched_tgt, idx
 

@@ -28,6 +28,7 @@ setup(
         "console_scripts": [
             "waypoint_follow_server = freato.waypoint_follow_server:main",
             "slam_exploration = freato.slam_exploration:main",
+            "test_a_star = freato.test_a_star:main",
         ],
     },
 )

@@ -10,9 +10,12 @@ from rclpy.node import Node
 from rclpy.action import ActionServer
 from rclpy.duration import Duration
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, PoseStamped
 from nav2_msgs.action import FollowWaypoints
 from rclpy.executors import MultiThreadedExecutor
+
+import tf2_ros
+from tf2_geometry_msgs import do_transform_pose
 
 
 class WaypointActionServer(Node):
@@ -33,6 +36,10 @@ class WaypointActionServer(Node):
         self.vel_pub = self.create_publisher(Twist, "cmd_vel", 10)
         self.create_subscription(Odometry, "/odom", self.process_odom, 10)
 
+        # Setup tf2 to convert from odom to map frame
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+
         # Speed parameters
         self.angular_velocity = math.pi / 8
         self.linear_velocity = 0.2
@@ -42,9 +49,20 @@ class WaypointActionServer(Node):
             self, FollowWaypoints, "follow_points", self.execute_callback
         )
 
+        # Position in map frame
+        self.position = []
+
     def execute_callback(self, goal_handle):
         goal_poses = goal_handle.request.poses
         print(f"{len(goal_poses)} Waypoints Received")
+
+        # If not position information from transforms
+        if not self.position:
+            self.send_drive_command(0.0, 0.0)
+            goal_handle.abort()
+            result = FollowWaypoints.Result()
+            result.missed_waypoints = list(range(0, len(goal_poses)))
+            return result
 
         for i, pose in enumerate(goal_poses):
 
@@ -115,10 +133,36 @@ class WaypointActionServer(Node):
         Args:
             msg (Odometry): The Odometry message containing pose and orientation.
         """
-        q = msg.pose.pose.orientation
-        yaw = quaternion_to_yaw(q)
-        self.position = [msg.pose.pose.position.x, msg.pose.pose.position.y, yaw]
-        # print(self.position)
+        map_pose = self.odom_to_map(msg)
+        if map_pose:
+            q = map_pose.orientation
+            yaw = quaternion_to_yaw(q)
+            self.position = [
+                map_pose.position.x,
+                map_pose.position.y,
+                yaw,
+            ]
+
+    def odom_to_map(self, odom_msg):
+        pose_odom = PoseStamped()
+        pose_odom.header = odom_msg.header
+        pose_odom.pose = odom_msg.pose.pose
+
+        try:
+            # Get tranformation from odom to map
+            tf_map_from_odom = self.tf_buffer.lookup_transform(
+                "map",
+                pose_odom.header.frame_id,
+                pose_odom.header.stamp,
+                timeout=rclpy.duration.Duration(seconds=0.2),
+            )
+        except:
+            print("Transform failed from odom to map failed")
+            return None
+
+        pose_map = do_transform_pose(pose_odom.pose, tf_map_from_odom)
+        # print("Odom to map success")
+        return pose_map
 
     def send_drive_command(self, linear, angular):
         """Drive with the specified linear and angular velocity.

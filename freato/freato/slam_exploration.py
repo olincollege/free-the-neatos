@@ -2,10 +2,11 @@ from numpy.ma.core import MaskedArrayFutureWarning
 import rclpy # ros2 python
 from rclpy.node import Node # ros node
 from nav_msgs.msg import OccupancyGrid # SLAM map ros message type
-from nav2_msgs.msg import ParticleCloud, Particle # For publishing frontiers to rviz
-from geometry_msgs.msg import Pose, Point
-from rclpy.qos import qos_profile_sensor_data
-import numpy as np
+from nav2_msgs.msg import ParticleCloud, Particle # for publishing frontiers to rviz
+from geometry_msgs.msg import Pose, Point # published frontier representation
+from rclpy.qos import qos_profile_sensor_data # sensor profile for frontier publisher
+import numpy as np # quickly manipulate map array to find frontiers
+import math # various calculations
 
 class SLAM_Exploration(Node):
     def __init__(self):
@@ -23,7 +24,7 @@ class SLAM_Exploration(Node):
         # Node variables
 
         # an array of coordinates followed
-        self.dtype = [('row',int),('col',int),('empty_percent',float)]
+        self.dtype = [('row',int),('col',int),('weight',float)]
         self.ranked_frontier_coords = np.array([], dtype=self.dtype)
         
         # Circular mask of the space needed for robot to fit in any orientation
@@ -39,6 +40,7 @@ class SLAM_Exploration(Node):
         self.UPPER_EMPTY_CELL_COUNT = int(self.CIRCLE_CELL_COUNT*upper_empty_cell_percent/100)
         print("Lower and upper empty cell count boundaries for frontier determination:", self.LOWER_EMPTY_CELL_COUNT, self.UPPER_EMPTY_CELL_COUNT)
         print("out of total number of cells:", self.CIRCLE_CELL_COUNT)
+        self.latest_map = None
 
         # Subscriber to map topic: calls function to update frontiers
         self.map_subscriber = self.create_subscription(
@@ -59,6 +61,7 @@ class SLAM_Exploration(Node):
         on how close they are to a set distance away from the robot. This
         list of frontier coordinates is saved to self.ranked_frontier_coords.
         """
+        self.latest_map = msg
         start_time = self.get_clock().now().nanoseconds
         self.get_logger().info("Updating frontiers list")
 
@@ -94,10 +97,12 @@ class SLAM_Exploration(Node):
                         if (cell == 0):
                             empty_cell_count += 1
             if (self.LOWER_EMPTY_CELL_COUNT < empty_cell_count < self.UPPER_EMPTY_CELL_COUNT):
-                #print(itr.multi_index[0],itr.multi_index[1],float(empty_cell_count)/self.CIRCLE_CELL_COUNT)
-                self.ranked_frontier_coords = np.append(self.ranked_frontier_coords,np.array([(itr.multi_index[0],itr.multi_index[1],float(empty_cell_count)/float(self.CIRCLE_CELL_COUNT))],dtype=self.dtype))
+                this_weight = self.calculate_frontier_weight(itr.multi_index[0], itr.multi_index[1], empty_cell_count)
+                self.ranked_frontier_coords = np.append(self.ranked_frontier_coords,np.array([(itr.multi_index[0],itr.multi_index[1],this_weight)],dtype=self.dtype))
 
-        self.ranked_frontier_coords.sort(order='empty_percent')
+        
+
+        self.ranked_frontier_coords.sort(order='weight')
         with np.printoptions(threshold=np.inf):
             print(self.ranked_frontier_coords)
             # Remember to convert them!!!!!!!!!!!!
@@ -109,13 +114,42 @@ class SLAM_Exploration(Node):
         msg = ParticleCloud()
         msg.header.frame_id = self.map_frame
         msg.header.stamp = timestamp
-        for frontier in frontiers:
+        for frontier in frontiers[:1]:
             # TODO: Turn into method to offset by the correct amount
-            frontier_pose = Pose(position=Point(x=map_info.origin.position.x + (0.5 + self.robot_width/2 + float(frontier['col']))*map_info.resolution,y=map_info.origin.position.y + (0.5 + self.robot_width/2 + float(frontier['row']))*map_info.resolution,z=0.0))
-            msg.particles.append(Particle(pose=frontier_pose))
+            frontier_pose = Pose(position=Point(x=self.grid_col_to_x_pos(frontier['col']),y=self.grid_row_to_y_pos(frontier['row']),z=0.0))
+            msg.particles.append(Particle(pose=frontier_pose, weight=1/(0.00001+frontier['weight'])))
             self.frontiers_publisher.publish(msg)
+
+    def grid_col_to_x_pos(self, col_index):
+        """
+        Converts a column in the map grid into its x position in the map frame
+        """
+        return self.latest_map.info.origin.position.x + (0.5 + self.robot_width/2 + float(col_index))*self.latest_map.info.resolution
             
-            
+    def grid_row_to_y_pos(self, row_index):
+        """
+        Converts a column in the map grid into its y position in the map frame
+        """
+        return self.latest_map.info.origin.position.y + (0.5 + self.robot_width/2 + float(row_index))*self.latest_map.info.resolution
+
+    def calculate_frontier_weight(self, row, col, empty_cell_count):
+        """Determine how useful a frontier is to pathfind to and assign
+        a weight to it, with lower weights being better. 
+        Frontiers closest to the line between explored and unexplored
+        and closest to a specific distance from the robot are prioritized.
+        Weights are positive somewhat normalized between 0-1,
+        but can be larger than 1 if the frontier is far from the robot. 
+        """
+        empty_cell_proportion = float(empty_cell_count)/float(self.CIRCLE_CELL_COUNT)
+        # Prioritizes frontiers that are closest to a specific proportion
+        # of explored to unexplored space, like 50/50, since these points
+        # are most centered on the boundary of explored and unexplored space.
+        # The proportion should be about between zero and 1, 
+        # so multiplying it by 2 makes it better fit this range
+        uncertainty_measurement = 2*math.fabs(empty_cell_proportion-0.5)
+        return uncertainty_measurement
+        # TODO: Incorporate distance measurement into determination of best frontiers
+        
 
 def main(args=None):
     """Boilerplate main method to run the ros2 node

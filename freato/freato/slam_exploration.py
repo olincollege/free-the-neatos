@@ -1,4 +1,3 @@
-from numpy.ma.core import MaskedArrayFutureWarning
 import rclpy # ros2 python
 from rclpy.node import Node # ros node
 from nav_msgs.msg import OccupancyGrid # SLAM map ros message type
@@ -23,6 +22,9 @@ class SLAM_Exploration(Node):
 
         # Node variables
 
+        self.get_new_frontier = True
+        self.unprocessed_map = False
+
         # an array of coordinates followed
         self.dtype = [('row',int),('col',int),('weight',float)]
         self.ranked_frontier_coords = np.array([], dtype=self.dtype)
@@ -46,28 +48,53 @@ class SLAM_Exploration(Node):
         self.map_subscriber = self.create_subscription(
             OccupancyGrid,
             self.map_topic_name,
-            self.update_frontiers,
+            self.update_map,
             10 )
         # Publisher for rviz2 visualization of frontier coordinates
         self.frontiers_publisher = self.create_publisher(ParticleCloud,
         self.particle_cloud_name, qos_profile_sensor_data)
+
+        # callback to run main loop
+        self.create_timer(0.001, self.run_loop)
+
+    def run_loop(self):
+        """Holds the main loop to command driving based on the frontiers list"""
+        # wait until map exists
+        if self.latest_map is None: return
+
+        if self.get_new_frontier:
+            if self.unprocessed_map:
+                print("update map")
+                self.update_frontiers()
+                self.unprocessed_map = False
+                # a_star_result = select_valid_frontier()
+                # if a_star_result is None:
+                #     self.end_when_action_done = True 
+                #     return
+                # self.waypoints_list = a_star_to_waypoints(a_star_result)
+            # if self.action_complete:
+            #     run new action
+                
+    def update_map(self, msg):
+        self.latest_map = msg
+        self.unprocessed_map = True
+        self.get_logger().info("Received new map")
         
-        
-    def update_frontiers(self,msg):
+    def update_frontiers(self):
         """
-        Callback function that creates a ranked list of unexplored 'frontiers'
+        Function that creates a ranked list of unexplored 'frontiers'
         These frontiers are points the robot can occupy that are roughly on
         the boundary of explored and unexplored space. They are ranked based
         on how close they are to a set distance away from the robot. This
         list of frontier coordinates is saved to self.ranked_frontier_coords.
         """
-        self.latest_map = msg
+        map = self.latest_map
         start_time = self.get_clock().now().nanoseconds
         self.get_logger().info("Updating frontiers list")
 
         self.ranked_frontier_coords = np.array([],dtype=self.dtype)
 
-        map_grid = np.array(msg.data).reshape((msg.info.height,msg.info.width))
+        map_grid = np.array(map.data).reshape((map.info.height,map.info.width))
         print(map_grid.shape)
 
         var = 0
@@ -103,10 +130,10 @@ class SLAM_Exploration(Node):
         
 
         self.ranked_frontier_coords.sort(order='weight')
-        with np.printoptions(threshold=np.inf):
-            print(self.ranked_frontier_coords)
+        # with np.printoptions(threshold=np.inf):
+        #     print(self.ranked_frontier_coords)
             # Remember to convert them!!!!!!!!!!!!
-            self.publish_frontiers(self.ranked_frontier_coords, msg.header.stamp, msg.info)
+        self.publish_frontiers(self.ranked_frontier_coords, map.header.stamp, map.info)
         duration = str(float(self.get_clock().now().nanoseconds - start_time)/1_000_000_000)
         _ = self.get_logger().info("List updated in %s seconds" % duration)
 
@@ -116,19 +143,21 @@ class SLAM_Exploration(Node):
         msg.header.stamp = timestamp
         for frontier in frontiers[:1]:
             # TODO: Turn into method to offset by the correct amount
-            frontier_pose = Pose(position=Point(x=self.grid_col_to_x_pos(frontier['col']),y=self.grid_row_to_y_pos(frontier['row']),z=0.0))
+            frontier_pose = Pose(position=Point(x=self.frontier_list_grid_col_to_x_pos(frontier['col']),y=self.frontier_list_grid_row_to_y_pos(frontier['row']),z=0.0))
             msg.particles.append(Particle(pose=frontier_pose, weight=1/(0.00001+frontier['weight'])))
             self.frontiers_publisher.publish(msg)
 
-    def grid_col_to_x_pos(self, col_index):
+    def frontier_list_grid_col_to_x_pos(self, col_index):
         """
         Converts a column in the map grid into its x position in the map frame
+        Also handles the offset used by the array when finding frontiers
         """
         return self.latest_map.info.origin.position.x + (0.5 + self.robot_width/2 + float(col_index))*self.latest_map.info.resolution
             
-    def grid_row_to_y_pos(self, row_index):
+    def frontier_list_grid_row_to_y_pos(self, row_index):
         """
         Converts a column in the map grid into its y position in the map frame
+        Also handles the offset used by the array when finding frontiers
         """
         return self.latest_map.info.origin.position.y + (0.5 + self.robot_width/2 + float(row_index))*self.latest_map.info.resolution
 

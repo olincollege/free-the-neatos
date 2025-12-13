@@ -88,7 +88,7 @@ class SLAM_Exploration(Node):
                 #print(cell, type(cell))
                 if (self.CIRCLE_MASK[mask_itr.multi_index[0]][mask_itr.multi_index[1]]):
                     if (cell == 100):
-                        #print("break")
+                        empty_cell_count = self.UPPER_EMPTY_CELL_COUNT + 1
                         break
                     else:
                         if (cell == 0):

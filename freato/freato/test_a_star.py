@@ -176,9 +176,13 @@ class TestAStar(Node):
         self.get_logger().info("Goal accepted")
 
         result_future = goal_handle.get_result_async()
-        rclpy.spin_until_future_complete(self, result_future)
+        print("start")
+       #  rclpy.spin_until_future_complete(self, result_future)
+        result_future.add_done_callback(self.reach_target_cb)
+        print("end")
 
-        result = result_future.result().result
+    def reach_target_cb(self, future):
+        result = future.result().result
         self.get_logger().info(
             f"Done. Missed waypoints: {list(result.missed_waypoints)}"
         )

@@ -1,3 +1,4 @@
+from ast import Pass
 import rclpy # ros2 python
 from rclpy.node import Node # ros node
 from nav_msgs.msg import OccupancyGrid # SLAM map ros message type
@@ -43,6 +44,7 @@ class SLAM_Exploration(Node):
         print("Lower and upper empty cell count boundaries for frontier determination:", self.LOWER_EMPTY_CELL_COUNT, self.UPPER_EMPTY_CELL_COUNT)
         print("out of total number of cells:", self.CIRCLE_CELL_COUNT)
         self.latest_map = None
+        self.latest_map_grid = None
 
         # Subscriber to map topic: calls function to update frontiers
         self.map_subscriber = self.create_subscription(
@@ -69,14 +71,20 @@ class SLAM_Exploration(Node):
                 self.unprocessed_map = False
                 # a_star_result = select_valid_frontier()
                 # if a_star_result is None:
-                #     self.end_when_action_done = True 
+                #     self.end_when_action_done = True
+                #     if self.current_action is None
+                #         save_map_and_end_node()
                 #     return
-                # self.waypoints_list = a_star_to_waypoints(a_star_result)
+                # self.waypoints_path = index_points_to_path(a_star_result)
             # if self.action_complete:
-            #     run new action
+            #     if self.end_when_action_done:
+            #         save_map_and_end_node()
+            #     run new action with waypoints_path
                 
     def update_map(self, msg):
         self.latest_map = msg
+        self.latest_map_grid = np.array(msg.data).reshape((msg.info.height,msg.info.width))
+        print("Map has shape:", self.latest_map_grid.shape)
         self.unprocessed_map = True
         self.get_logger().info("Received new map")
         
@@ -94,9 +102,7 @@ class SLAM_Exploration(Node):
 
         self.ranked_frontier_coords = np.array([],dtype=self.dtype)
 
-        map_grid = np.array(map.data).reshape((map.info.height,map.info.width))
-        print(map_grid.shape)
-
+        map_grid = self.latest_map_grid
         var = 0
 
 
@@ -178,6 +184,21 @@ class SLAM_Exploration(Node):
         uncertainty_measurement = 2*math.fabs(empty_cell_proportion-0.5)
         return uncertainty_measurement
         # TODO: Incorporate distance measurement into determination of best frontiers
+
+    def select_valid_frontier(self):
+        """
+            Returns the list, or None if 
+        """
+        inflated_map = NotImplementedError# inflate_obstacles(
+        # self.latest_map_grid, self.robot_diameter, self.latest_map.info.resolution)
+        # start_odom = # robot odom
+        for frontier in self.ranked_frontier_coords:
+            x_coord = self.frontier_list_grid_col_to_x_pos(frontier['col'])
+            y_coord = self.frontier_list_grid_row_to_y_pos(frontier['row'])
+            a_star_result = None # a_star(inflated_map, start_odom, (x_coord, y_coord))
+            if a_star_result is not None:
+                return a_star_result
+        return None
         
 
 def main(args=None):

@@ -13,6 +13,7 @@ from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist, PoseStamped
 from nav2_msgs.action import FollowWaypoints
 from rclpy.executors import MultiThreadedExecutor
+from rclpy.time import Time
 
 import tf2_ros
 from tf2_geometry_msgs import do_transform_pose
@@ -147,13 +148,14 @@ class WaypointActionServer(Node):
         pose_odom = PoseStamped()
         pose_odom.header = odom_msg.header
         pose_odom.pose = odom_msg.pose.pose
+        # pose_odom.header.stamp = Time()
 
         try:
             # Get tranformation from odom to map
             tf_map_from_odom = self.tf_buffer.lookup_transform(
                 "map",
                 pose_odom.header.frame_id,
-                pose_odom.header.stamp,
+                Time(),
                 timeout=rclpy.duration.Duration(seconds=0.2),
             )
         except:
@@ -161,7 +163,7 @@ class WaypointActionServer(Node):
             return None
 
         pose_map = do_transform_pose(pose_odom.pose, tf_map_from_odom)
-        # print("Odom to map success")
+        print("Odom to map success")
         return pose_map
 
     def send_drive_command(self, linear, angular):

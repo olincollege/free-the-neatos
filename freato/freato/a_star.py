@@ -128,7 +128,7 @@ def a_star(map_grid, start, target):
                     priority_queue, (f_score[neighbor], neighbor[0], neighbor[1])
                 )
 
-    return []
+    return None
 
 
 def octile_distance(current, target):

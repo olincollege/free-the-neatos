@@ -3,17 +3,17 @@ This is a ROS action server to follow waypoints.
 """
 
 import math
-import time
+import concurrent.futures
 
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionServer
-from rclpy.duration import Duration
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import Twist, PoseStamped
+from geometry_msgs.msg import Twist, PoseStamped, Pose
 from nav2_msgs.action import FollowWaypoints
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.time import Time
+from visualization_msgs.msg import Marker
 
 import tf2_ros
 from tf2_geometry_msgs import do_transform_pose
@@ -36,14 +36,18 @@ class WaypointActionServer(Node):
         # Set up publishers and subscriptions
         self.vel_pub = self.create_publisher(Twist, "cmd_vel", 10)
         self.create_subscription(Odometry, "/odom", self.process_odom, 10)
+        self.marker_pub = self.create_publisher(Marker, "/target", 10)
 
         # Setup tf2 to convert from odom to map frame
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
+        # Run loop
+        self.create_timer(0.05, self.run_loop)
+
         # Speed parameters
-        self.angular_velocity = math.pi / 8
-        self.linear_velocity = 0.2
+        self.angular_velocity = math.pi / 4
+        self.linear_velocity = 0.15
 
         # Initialize the action server
         self._action_server = ActionServer(
@@ -53,76 +57,98 @@ class WaypointActionServer(Node):
         # Position in map frame
         self.position = []
 
+        # Reached reached position threshold
+        self.position_threshold = 0.15
+
+        # Callback and route progress
+        self.goal_handle = None
+        self.pose_number = 0
+        self.done_future = None
+
+        # Controller constant
+        self.proportional_constant = 0.5
+
+        self.run_loop_num = 0
+
+    def run_loop(self):
+        self.run_loop_num += 1
+        if self.goal_handle:
+
+            if self.goal_handle.is_cancel_requested:
+                self.finish("cancel")
+                return
+
+            target_pose = self.target_pose
+
+            m = Marker()
+            m.header.frame_id = "map"
+            m.header.stamp = self.get_clock().now().to_msg()
+            m.ns, m.id = "debug", 0
+            m.type, m.action = Marker.SPHERE, Marker.ADD
+
+            m.pose.position.x = target_pose.position.x
+            m.pose.position.y = target_pose.position.y
+            m.pose.position.z = 0.0
+            m.pose.orientation.w = 1.0
+
+            m.scale.x = m.scale.y = m.scale.z = 0.2
+            m.color.r, m.color.a = 1.0, 1.0  # alpha must be > 0
+
+            self.marker_pub.publish(m)
+
+            distance_to_target_pose = self.distance_to_pose(target_pose)
+
+            if distance_to_target_pose <= self.position_threshold:
+                self.pose_number += 1
+                if self.pose_number == self.num_poses:
+                    self.finish("success")
+                    return
+                else:
+                    print(f"Starting waypoint {self.pose_number}")
+
+            if self.pose_number < self.num_poses:
+                target_angle = self.angle_to_pose(target_pose)
+                current_angle = self.position[2]
+
+                angle_diff = target_angle - current_angle
+                angle_wrap = (angle_diff + math.pi) % (2 * math.pi) - math.pi
+
+                angular_vel_cmd = self.proportional_constant * angle_wrap
+
+                # Clip to range
+                angular_vel_cmd = min(angular_vel_cmd, self.angular_velocity)
+                angular_vel_cmd = max(angular_vel_cmd, -self.angular_velocity)
+
+                if self.run_loop_num % 10 == 0:
+                    print(f"Target angle: {math.degrees(target_angle)}")
+                    print(f"Current_angle: {math.degrees(current_angle)}")
+                    print(f"Angular Velocity command {angular_vel_cmd}")
+                    print(f"Distance to target pose: {distance_to_target_pose}")
+                    print()
+
+                linear_vel_cmd = self.linear_velocity
+                if abs(angle_diff) > math.radians(20):
+                    linear_vel_cmd = 0
+
+                self.send_drive_command(linear_vel_cmd, angular_vel_cmd)
+
     def execute_callback(self, goal_handle):
         goal_poses = goal_handle.request.poses
         print(f"{len(goal_poses)} Waypoints Received")
 
-        # If not position information from transforms
-        if not self.position:
+        # If existing goal goal handle or no position information from transforms
+        if self.goal_handle is not None or not self.position:
             self.send_drive_command(0.0, 0.0)
             goal_handle.abort()
             result = FollowWaypoints.Result()
             result.missed_waypoints = list(range(0, len(goal_poses)))
             return result
 
-        for i, pose in enumerate(goal_poses):
+        self.goal_handle = goal_handle
 
-            # Publish feedback
-            feedback = FollowWaypoints.Feedback()
-            feedback.current_waypoint = i
-            goal_handle.publish_feedback(feedback)
-            print(f"Starting waypoint {i}")
-
-            drive_time, rotate_time, rotate_sign = self.go_to_point_math(
-                pose.pose.position.x, pose.pose.position.y
-            )
-            print(f"Turn for: {rotate_time} sec, Drive for: {drive_time} sec")
-
-            # Send rotate command
-            self.send_drive_command(0, self.angular_velocity * rotate_sign)
-            rotate_start_time = self.get_clock().now()
-
-            # Rotate for that time
-            while self.get_clock().now() - rotate_start_time < Duration(
-                seconds=rotate_time
-            ):
-                if goal_handle.is_cancel_requested:
-                    self.send_drive_command(0, 0)
-                    goal_handle.canceled()
-                    print("Canceling action")
-                    result = FollowWaypoints.Result()
-                    result.missed_waypoints = list(range(i, len(goal_poses)))
-                    return result
-
-                # print(self.position)
-
-                time.sleep(0.01)
-
-            # Send drive command
-            self.send_drive_command(self.linear_velocity, 0)
-            drive_start_time = self.get_clock().now()
-
-            # Drive for that time
-            while self.get_clock().now() - drive_start_time < Duration(
-                seconds=drive_time
-            ):
-                if goal_handle.is_cancel_requested:
-                    self.send_drive_command(0, 0)
-                    goal_handle.canceled()
-                    print("Canceling action")
-                    result = FollowWaypoints.Result()
-                    result.missed_waypoints = list(range(i, len(goal_poses)))
-                    return result
-
-                # print(self.position)
-
-                time.sleep(0.01)
-
-            self.send_drive_command(0, 0)
-
-        goal_handle.succeed()
-        print("Action finished")
-        result = FollowWaypoints.Result()
+        self.done_future = concurrent.futures.Future()
+        result = self.done_future.result()
+        self.goal_handle = None
         return result
 
     def process_odom(self, msg):
@@ -163,7 +189,7 @@ class WaypointActionServer(Node):
             return None
 
         pose_map = do_transform_pose(pose_odom.pose, tf_map_from_odom)
-        print("Odom to map success")
+        # print("Odom to map succeess")
         return pose_map
 
     def send_drive_command(self, linear, angular):
@@ -178,51 +204,48 @@ class WaypointActionServer(Node):
         msg.angular.z = float(angular)
         self.vel_pub.publish(msg)
 
-    def go_to_point_math(self, target_x, target_y):
-        """
-        Moves the robot to a desired 2D point using current odometry information.
+    def angle_to_pose(self, pose: Pose):
+        x_distance = pose.position.x - self.position[0]
+        y_distance = pose.position.y - self.position[1]
+        return math.atan2(y_distance, x_distance)
 
-        The robot first rotates in place to face the target, then drives straight.
+    def finish(self, resolution):
+        self.send_drive_command(0.0, 0.0)
+        if resolution == "success":
+            self.goal_handle.succeed()
+        elif resolution == "abort":
+            self.goal_handle.abort()
+        elif resolution == "cancel":
+            self.goal_handle.canceled()
 
-        Args:
-            desired_x (float): Target X position.
-            desired_y (float): Target Y position.
-        """
-        current_x, current_y, current_angle = self.position
+        self.goal_handle = None
+        if self.done_future and not self.done_future.done():
+            result = FollowWaypoints.Result()
+            if self.pose_number < self.num_poses:
+                result.missed_waypoints = list(range(self.pose_number, self.num_poses))
+            else:
+                result.missed_waypoints = []
+            self.pose_number = 0
+            self.done_future.set_result(result)
 
-        # print("Current x is: ", current_x)
-        # print("Current y is: ", current_y)
-        # print("Des x is: ", desired_x)
-        # print("Des y is: ", desired_y)
+    def distance_to_pose(self, pose: Pose):
+        x_distance = pose.position.x - self.position[0]
+        y_distance = pose.position.y - self.position[1]
+        return math.sqrt((x_distance**2) + (y_distance**2))
 
-        # First, we calculate the desired orientation to drive in
-        # odom gives us quanternion, not yaw (z direction)
-        x = target_x - current_x
-        y = target_y - current_y
+    @property
+    def target_pose(self) -> Pose:
+        if self.goal_handle:
+            return self.goal_handle.request.poses[self.pose_number].pose
 
-        desired_angle = math.atan2(y, x)
-        # print(current_angle, desired_angle)
+        return None
 
-        current_angle = current_angle % (2 * math.pi)
-        desired_angle = desired_angle % (2 * math.pi)
+    @property
+    def num_poses(self) -> int:
+        if self.goal_handle:
+            return len(self.goal_handle.request.poses)
 
-        rotation_needed = (desired_angle - current_angle) % (2 * math.pi)
-
-        # Rotate left or right
-        if rotation_needed < math.pi:
-            rotate_sign = 1
-        else:
-            rotation_needed = 2 * math.pi - rotation_needed
-            rotate_sign = -1
-
-        # Calculate rotation time
-        rotate_time = rotation_needed / self.angular_velocity
-
-        # Calculate drive time
-        distance = math.sqrt((x) ** 2 + (y) ** 2)
-        drive_time = distance / self.linear_velocity
-
-        return drive_time, rotate_time, rotate_sign
+        return -1
 
 
 def quaternion_to_yaw(q):

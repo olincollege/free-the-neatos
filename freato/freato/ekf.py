@@ -141,34 +141,58 @@ class ExtendedKalmanFilter(Node):
             P_next: predicted next covariance matrix [3x3]
         """
 
-        # predict next state
-        x_next = X[0] + u[0] * self.dt * np.cos(X[2])
-        y_next = X[1] + u[0] * self.dt * np.sin(X[2])
-        theta_next = X[2] + u[1] * self.dt
+        # Predict next state using arc motion model
+        v = u[0]  # linear velocity
+        w = u[1]  # angular velocity
+        
+        if abs(w) < 1e-6:  # Nearly straight motion
+            x_next = X[0] + v * self.dt * np.cos(X[2])
+            y_next = X[1] + v * self.dt * np.sin(X[2])
+            theta_next = X[2]
+        else:  # Arc motion
+            # Robot follows circular arc
+            R = v / w  # radius of curvature
+            x_next = X[0] + R * (np.sin(X[2] + w * self.dt) - np.sin(X[2]))
+            y_next = X[1] - R * (np.cos(X[2] + w * self.dt) - np.cos(X[2]))
+            theta_next = X[2] + w * self.dt
 
-        # wrap theta to [-pi, pi]
+        # Wrap theta
         theta_next = (theta_next + np.pi) % (2 * np.pi) - np.pi
-
-        # setup next state matrix
         X_pred_next = np.array([x_next, y_next, theta_next])
 
-        # Jacobian of the motion model wrt state
-        F = np.array([[1, 0, -u[0] * self.dt * np.sin(X[2])], 
-                      [0, 1,  u[0] * self.dt * np.cos(X[2])],
-                      [0, 0, 1]])
+        # Updated Jacobian for arc motion
+        if abs(w) < 1e-6:
+            F = np.array([[1, 0, -v * self.dt * np.sin(X[2])], 
+                        [0, 1,  v * self.dt * np.cos(X[2])],
+                        [0, 0, 1]])
+        else:
+            F = np.array([
+                [1, 0, (v/w) * (np.cos(X[2] + w*self.dt) - np.cos(X[2]))],
+                [0, 1, (v/w) * (np.sin(X[2] + w*self.dt) - np.sin(X[2]))],
+                [0, 0, 1]
+            ])
         
-        # Jacobian of the motion model wrt control input
-        L = np.array([[self.dt * np.cos(X[2]), 0],
-                      [self.dt * np.sin(X[2]), 0],
-                      [0, self.dt]])
-
-        sigma_v = 0.05  # m/s
-        sigma_w = np.deg2rad(10)  # rad/s
-        W = np.diag([sigma_v**2, sigma_w**2]) # control noise covariance, tune as needed
-
-        Q = L @ W @ L.T  # process noise covariance
-
-        P_pred_next = F @ P @ F.T + Q  # update covariance
+        # Jacobian wrt control
+        if abs(w) < 1e-6:
+            L = np.array([[self.dt * np.cos(X[2]), 0],
+                        [self.dt * np.sin(X[2]), 0],
+                        [0, self.dt]])
+        else:
+            L = np.array([
+                [(1/w) * (np.sin(X[2] + w*self.dt) - np.sin(X[2])), 
+                (v/(w**2)) * (np.sin(X[2]) - np.sin(X[2] + w*self.dt)) + (v/w) * self.dt * np.cos(X[2] + w*self.dt)],
+                [-(1/w) * (np.cos(X[2] + w*self.dt) - np.cos(X[2])), 
+                (v/(w**2)) * (np.cos(X[2] + w*self.dt) - np.cos(X[2])) + (v/w) * self.dt * np.sin(X[2] + w*self.dt)],
+                [0, self.dt]
+            ])
+        
+        # Velocity-dependent noise
+        sigma_v = 0.02 + 0.1 * abs(v)
+        sigma_w = np.deg2rad(2) + np.deg2rad(10) * abs(w)
+        W = np.diag([sigma_v**2, sigma_w**2])
+        
+        Q = L @ W @ L.T
+        P_pred_next = F @ P @ F.T + Q
 
         return X_pred_next, P_pred_next
 
@@ -190,7 +214,19 @@ class ExtendedKalmanFilter(Node):
         y = X_measured - (H @ X_pred_next)  # measurement residual
         y[2] = (y[2] + np.pi) % (2 * np.pi) - np.pi  # normalize angle difference
 
-        R = np.diag([0.1**2, 0.1**2, (np.deg2rad(5))**2]) # measurement noise covariance, tune as needed
+        # Scale measurement uncertainty based on velocity
+        # Fast motion = less trust in ICP
+        v_mag = abs(self.u[0])
+        w_mag = abs(self.u[1])
+        
+        base_pos_std = 0.1
+        base_ang_std = np.deg2rad(5)
+        
+        # Increase uncertainty with velocity
+        pos_std = base_pos_std * (1.0 + 2.0 * v_mag)
+        ang_std = base_ang_std * (1.0 + 3.0 * w_mag)
+
+        R = np.diag([pos_std**2, pos_std**2, ang_std**2]) # measurement noise covariance, tune as needed
         S = H @ P_pred_next @ H.T + R
 
         K = P_pred_next @ H.T @ np.linalg.inv(S)  # Kalman gain
@@ -228,6 +264,22 @@ class ExtendedKalmanFilter(Node):
 
         # format into state vector
         x_icp = np.array([T_x[0,2], T_x[1,2], math.atan2(T_x[1,0], T_x[0,0])])
+
+        # Calculate ICP correction magnitude
+        delta_x = x_icp[0] - x[0]
+        delta_y = x_icp[1] - x[1]
+        delta_theta = (x_icp[2] - x[2] + np.pi) % (2 * np.pi) - np.pi
+        delta_dist = np.sqrt(delta_x**2 + delta_y**2)
+        
+        # Reject unreasonable corrections
+        max_translation_correction = 0.3  # meters
+        max_rotation_correction = np.deg2rad(20)  # degrees
+        
+        if delta_dist > max_translation_correction or abs(delta_theta) > max_rotation_correction:
+            self.get_logger().warn(f"ICP correction rejected: Δd={delta_dist:.3f}m, Δθ={np.rad2deg(delta_theta):.1f}°")
+            return x  # Return prediction unchanged
+        
+        self.get_logger().info(f"ICP correction: Δd={delta_dist:.3f}m, Δθ={np.rad2deg(delta_theta):.1f}°")
 
         #self.get_logger().info(f"Pred: [{x[0]:.2f}, {x[1]:.2f}, {np.rad2deg(x[2]):.1f}°]")
         #self.get_logger().info(f"ICP:  [{x_icp[0]:.2f}, {x_icp[1]:.2f}, {np.rad2deg(x_icp[2]):.1f}°]")

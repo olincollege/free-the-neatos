@@ -12,52 +12,45 @@ from rclpy.duration import Duration
 import math
 import time
 import numpy as np
-from ekf_testing.occupancy_field import OccupancyField
+from freato.occupancy_field import OccupancyField
 import numpy as np
 import matplotlib.pyplot as plt
-from ekf_testing.helper_functions import TFHelper
+from freato.helper_functions import TFHelper
 #from rclpy.qos import qos_profile_sensor_data
-from ekf_testing.angle_helpers import quaternion_from_euler
-from ekf_testing.icp import tf_from_icp as tf_icp
+from freato.angle_helpers import quaternion_from_euler
+from freato.icp import tf_from_icp as tf_icp
+import copy
 
 class ExtendedKalmanFilter(Node):
     
     def __init__(self):
-        super().__init__('ekf')
+        super().__init__("ekf")
 
         self.base_frame = "base_footprint" # the frame of the robot base
         self.map_frame = "map" # the name of the map coordinate frame
         self.odom_frame = "odom" # the name of the odometry coordinate frame
 
         # laser_subscriber listens for data from the lidar
-        self.create_subscription(LaserScan, 'scan', self.receive_scan, 10)
+        self.create_subscription(LaserScan, "scan", self.receive_scan, 10)
         self.scan_to_process = None # latest scan to process
         self.last_scan_timestep = None # time of last processed scan
 
         # publisher the estimated pose to the 'ekf_pose' topic
-        self.pose_publisher = self.create_publisher(PoseWithCovarianceStamped, 'ekf_pose', 10)
-        
+        self.pose_publisher = self.create_publisher(PoseWithCovarianceStamped, "ekf_pose", 10)
+
         # subscribe to velocity commands
         self.create_subscription(Twist, "cmd_vel", self.receive_cmd_vel, 10) 
 
-        self.occupancy_field = OccupancyField(self) # define occupancy field object
+        # define occupancy field object
+        self.occupancy_field = OccupancyField(self)
 
-        # Extract dense point cloud from the occupancy grid
+        # extract dense point cloud from the occupancy grid
         self.map_points = self.extract_map_points()
-        
-        self.get_logger().info(f"Extracted {len(self.map_points)} map points for ICP")
-        
-        resolution = self.occupancy_field.map.info.resolution
-        origin_x = self.occupancy_field.map.info.origin.position.x
-        origin_y = self.occupancy_field.map.info.origin.position.y
+        self.get_logger().info(f"Extracted {self.map_points.shape[0]} occupied points from the map.")
 
-        self.get_logger().info(f"Occupied points: {len(self.map_points)}")
-        self.get_logger().info(f"Occupied X range: [{self.map_points[:,0].min():.2f}, {self.map_points[:,0].max():.2f}]")
-        self.get_logger().info(f"Occupied Y range: [{self.map_points[:,1].min():.2f}, {self.map_points[:,1].max():.2f}]")
+        self.tf_helper = TFHelper(self) # TF helper for transforms
 
-        self.tf_helper = TFHelper(self)
-
-        self.dt = 0.1 # time step between filter updates
+        self.dt = 0.25 # time step between filter updates
 
         self.u = np.array([0.0, 0.0])  # initialize control input
 
@@ -82,35 +75,30 @@ class ExtendedKalmanFilter(Node):
         # create timer that runs main loop at the set interval dt
         self.timer = self.create_timer(self.dt, self.main_loop)
 
+        # create timer to publish latest transform
         self.transform_timer = self.create_timer(0.1, self.pub_latest_transform)
 
-        #self.visualize_occupancy_field()
+        # FOR DEBUGGING
+        #self.visualize_occupancy_field() # visualize occupancy field via matplotlib
 
 
     def pub_latest_transform(self):
-        """
-        Publish the latest map to odom transform.
-
-        """
+        """Publish the latest map to odom transform."""
         if self.last_scan_timestep is None:
             return
         tf_time = self.last_scan_timestep + Duration(seconds=0.1)
         self.tf_helper.send_last_map_to_odom_transform(self.map_frame, self.odom_frame, tf_time)
 
     def main_loop(self):
-        """
-        Main loop of the EKF.
+        """Main loop of the EKF."""
 
-        """
-        
         if self.scan_to_process is None:
             return # skip if no scan to process
         
         # if valid scan received, process it
-        scan_msg = self.scan_to_process
+        scan_msg = copy.deepcopy(self.scan_to_process)
         processed_scan = self.process_scan(scan_msg)
-        
-        self.scan_to_process = None # reset scan after processing
+
 
         # prediction step
         X_pred_next, P_pred_next = self.prediction(self.X, self.u, self.P)
@@ -137,19 +125,20 @@ class ExtendedKalmanFilter(Node):
         if odom_result[0] is not None:
             self.tf_helper.fix_map_to_odom_transform(robot_pose, odom_result[0])
 
-        #self.get_logger().info('Current Estimate: x={0}, y={1}, theta={2}'.format(self.X[0], self.X[1], self.X[2]))
+        self.get_logger().info('Current Estimate: x={0}, y={1}, theta={2}'.format(self.X[0], self.X[1], self.X[2]))
 
     def prediction(self, X, u, P):
         """
-        Motion update step of the EKF.
+        Motion update step of the EKF. 
+        The motion model is based off of velocity commands.
 
         Args:
-            state: current state [x, y, theta]
-            vel_cmd: control input [v, omega]
+            state: current state vector [x, y, theta]
+            vel_cmd: control input vector [v, omega]
         
         Returns:
-            x_next: predicted next state
-            P_next: predicted next covariance
+            x_next: predicted next state vector [x, y, theta]
+            P_next: predicted next covariance matrix [3x3]
         """
 
         # predict next state
@@ -174,7 +163,7 @@ class ExtendedKalmanFilter(Node):
                       [0, self.dt]])
 
         sigma_v = 0.05  # m/s
-        sigma_w = np.deg2rad(5)  # rad/s
+        sigma_w = np.deg2rad(10)  # rad/s
         W = np.diag([sigma_v**2, sigma_w**2]) # control noise covariance, tune as needed
 
         Q = L @ W @ L.T  # process noise covariance
@@ -188,12 +177,13 @@ class ExtendedKalmanFilter(Node):
         Measurement update step of the EKF.
 
         Args:
-            x_pred (np.array): Predicted state [x, y, theta]
-            P_pred (np.array): Predicted covariance
-            z (np.array): Measurement [x_meas, y_meas]
+            x_pred: predicted state vector [x, y, theta]
+            P_pred: predicted covariance matrix [3x3]
+            z: measured state vector [x, y, theta]
 
         Returns:
-            np.array: Updated state after measurement
+            X_updated_next: updated state vector after measurement [x, y, theta]
+            P_updated_next: updated covariance matrix after measurement [3x3]
         """
 
         H = np.eye(3)  # measurement matrix
@@ -215,22 +205,22 @@ class ExtendedKalmanFilter(Node):
         """
         Performs scan to map ICP for an absolute pose measurement.
 
-        """
+        Args:
+            scan: Nx2 array of scan points in robot base frame
+            x: current predicted state vector [x, y, theta]
 
-        # transform scan to map frame using current pose estimate
-        #scan_tf = self.transform_scan_to_map(scan, x)
+        Returns:
+            x_icp: measured state vector [x, y, theta]
+        """
 
         # format current pose estimate into transformation matrix
         T_estimate = np.array([[np.cos(x[2]), -np.sin(x[2]), x[0]],
                                [np.sin(x[2]),  np.cos(x[2]), x[1]],
                                [0, 0, 1]])
 
-        # perform ICP between scan and occupancy field occupied points
-        T_correction = tf_icp(scan, self.map_points, T_estimate, max_iterations=50, tolerance=1e-6)
-
-        # combine transformations to get corrected pose
-        #T_x = T_correction @ T_estimate
-        T_x = T_correction
+        # perform ICP between scan and occupancy field occupied points to get
+        # corrected pose
+        T_x = tf_icp(scan, self.map_points, T_estimate, max_iterations=50, tolerance=1e-6)
 
         # self.get_logger().info(f"T_estimate:\n{T_estimate}")
         # self.get_logger().info(f"T_returned:\n{T_x}")
@@ -239,8 +229,8 @@ class ExtendedKalmanFilter(Node):
         # format into state vector
         x_icp = np.array([T_x[0,2], T_x[1,2], math.atan2(T_x[1,0], T_x[0,0])])
 
-        self.get_logger().info(f"Pred: [{x[0]:.2f}, {x[1]:.2f}, {np.rad2deg(x[2]):.1f}°]")
-        self.get_logger().info(f"ICP:  [{x_icp[0]:.2f}, {x_icp[1]:.2f}, {np.rad2deg(x_icp[2]):.1f}°]")
+        #self.get_logger().info(f"Pred: [{x[0]:.2f}, {x[1]:.2f}, {np.rad2deg(x[2]):.1f}°]")
+        #self.get_logger().info(f"ICP:  [{x_icp[0]:.2f}, {x_icp[1]:.2f}, {np.rad2deg(x_icp[2]):.1f}°]")
 
         # Visualize first scan alignment (only once)
         # if not hasattr(self, '_visualized_first_scan'):
@@ -253,6 +243,12 @@ class ExtendedKalmanFilter(Node):
         """
         Formats the state and covariance into a PoseWithCovarianceStamped message.
 
+        Args:
+            x: state vector [x, y, theta]
+            P: covariance matrix [3x3]
+
+        Returns:
+            pose_msg: PoseWithCovarianceStamped message
         """
 
         pose_msg = PoseWithCovarianceStamped()
@@ -276,6 +272,8 @@ class ExtendedKalmanFilter(Node):
         """
         Process incoming laser scan data.
 
+        Args:
+            msg: LaserScan message
         """
         if msg == None:
             return
@@ -287,8 +285,9 @@ class ExtendedKalmanFilter(Node):
         """
         Process incoming velocity command data.
 
+        Args:
+            msg: Twist message
         """
-
         self.u[0] = msg.linear.x
         self.u[1] = msg.angular.z
 
@@ -296,18 +295,15 @@ class ExtendedKalmanFilter(Node):
         """
         Process the laser scan message to extract valid range and angle data
         and converts it to Cartesian coordinates in the base link frame.
+        
+        Args:
+            msg: LaserScan message
+        Returns:
+            scan: Nx2 array of scan points in robot base frame
         """
 
-        # ranges = np.array(msg.ranges)
-        # angles = np.linspace(msg.angle_min, msg.angle_max, len(ranges))
-
-        try:
-            # Get proper angles accounting for laser frame orientation
-            ranges, angles = self.tf_helper.convert_scan_to_polar_in_robot_frame(
-                msg, self.base_frame)
-        except Exception as e:
-            self.get_logger().warn(f"Transform not ready: {e}")
-            return None
+        ranges = msg.ranges
+        angles = np.linspace(msg.angle_min, msg.angle_max, len(ranges))
 
         beam_step = max(1, int(len(ranges) / 180))  # subdivide into n beams
 
@@ -330,39 +326,6 @@ class ExtendedKalmanFilter(Node):
         scan = np.vstack((lx, ly)).T  # Nx2 array
 
         return scan
-    
-    def transform_scan_to_map(self, scan, x):
-        """
-        Transforms the scan points from the base frame to the map frame
-        using the current estimated pose of the robot.
-        """
-
-        # construct transformation matrix from robot pose
-        T = np.array([[np.cos(x[2]), -np.sin(x[2]), x[0]],
-                      [np.sin(x[2]),  np.cos(x[2]), x[1]],
-                      [0, 0, 1]])
-
-        # apply transformation to scan points
-        scan_homogeneous = np.hstack((scan, np.ones((scan.shape[0], 1))))
-        scan_transformed = (T @ scan_homogeneous.T).T[:, 0:2]
-
-        return scan_transformed
-
-
-    def visualize_occupancy_field(self):
-        """Visualize occupancy field with robot position."""
-        plt.figure(figsize=(8, 8))
-        
-        # Plot occupied points
-        plt.plot(self.occupancy_field.occupied[:, 0], self.occupancy_field.occupied[:, 1], 
-                'k.', markersize=0.5)
-        
-        # Plot robot position
-        plt.plot(self.X[0], self.X[1], 'ro', markersize=10)
-        
-        plt.axis('equal')
-        plt.show()
-        self.get_logger().info("Displayed occupancy field visualization.")
 
     def extract_map_points(self):
         """
@@ -389,7 +352,24 @@ class ExtendedKalmanFilter(Node):
         
         return np.array(occupied_cells)
 
-    # DEBUG
+    # VISUALIZATION FOR DEBUGGING
+
+    def visualize_occupancy_field(self):
+        """Visualize occupancy field with robot position."""
+
+        plt.figure(figsize=(8, 8))
+        
+        # Plot occupied points
+        plt.plot(self.occupancy_field.occupied[:, 0], self.occupancy_field.occupied[:, 1], 
+                'k.', markersize=0.5)
+        
+        # Plot robot position
+        plt.plot(self.X[0], self.X[1], 'ro', markersize=10)
+        
+        plt.axis('equal')
+        plt.show()
+        self.get_logger().info("Displayed occupancy field visualization.")
+
     def _visualize_scan_alignment(self, scan, x_pred, x_icp):
         """Visualize scan alignment for debugging."""
         import matplotlib.pyplot as plt

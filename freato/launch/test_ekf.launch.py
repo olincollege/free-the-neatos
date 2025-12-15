@@ -35,13 +35,13 @@ def generate_launch_description():
             output='screen'
         ),
         Node(
-            package='ekf_testing',
-            executable='ekf_testing',
+            package='freato',
+            executable='ekf',
             name='ekf',
             output='screen',
             parameters=[{
-                'x_init': 0.0,
-                'y_init': 0.0,
+                'x_init': 1.36,
+                'y_init': 3.09,
                 'theta_init': 0.0,
                 'p_init_diag': [0.05, 0.05, 0.05]
             }]

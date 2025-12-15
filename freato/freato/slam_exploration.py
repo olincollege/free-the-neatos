@@ -39,10 +39,11 @@ class SLAM_Exploration(Node):
 
         self.end_when_action_done = False
         # self.current_action = None
-        self.action_is_complete = False
+        self.action_is_complete = True
 
         self.waypoints_list = None
         self.num_waypoints = 0
+        self.waypoint_result_future = None
 
         # an array of coordinates followed
         self.dtype = [('row',int),('col',int),('weight',float)]
@@ -99,7 +100,7 @@ class SLAM_Exploration(Node):
         """Holds the main loop to command driving based on the frontiers list"""
         # wait until map exists
         if self.latest_map is None: return
-
+        print("running loop")
         if self.get_new_frontier:
             if self.unprocessed_map:
                 print("update map")
@@ -111,7 +112,7 @@ class SLAM_Exploration(Node):
                     if self.action_is_complete:
                         self.save_map_and_end_node()
                     return
-                
+            print("is the action complete?", self.action_is_complete)
             if self.action_is_complete:
                 if self.end_when_action_done:
                     self.save_map_and_end_node()
@@ -237,16 +238,25 @@ class SLAM_Exploration(Node):
         """
         inflated_map = inflate_obstacles(
         self.latest_map_grid, self.robot_diameter, self.latest_map.info.resolution)
-        odom_pose = self.latest_odom.pose.position
-        start_odom = (odom_pose.x, odom_pose.y)
+        odom_pose = self.latest_odom.pose.pose.position
+        start_odom_indices = self.coords_to_indices(odom_pose.x, odom_pose.y)
         for frontier in self.ranked_frontier_coords:
             x_coord = self.frontier_list_grid_col_to_x_pos(frontier['col'])
             y_coord = self.frontier_list_grid_row_to_y_pos(frontier['row'])
-            a_star_result = a_star(inflated_map, start_odom, (x_coord, y_coord))
+            end_frontier_indices = self.coords_to_indices(x_coord, y_coord)
+            a_star_result = a_star(inflated_map, start_odom_indices, end_frontier_indices) 
             if a_star_result is not None:
                 return a_star_result
         return None
 
+    def coords_to_indices(self, x, y):
+        map_x_origin = self.latest_map.info.origin.position.x
+        map_y_origin = self.latest_map.info.origin.position.y
+        map_resolution = self.latest_map.info.resolution
+        col = int((x - map_x_origin) / map_resolution)
+        row = int((y - map_y_origin) / map_resolution)
+
+        return (row, col)
 
     def make_pose(self, x, y, frame_id="odom"):
         ps = PoseStamped()
@@ -293,23 +303,27 @@ class SLAM_Exploration(Node):
         send_future = self.waypoints_client.send_goal_async(
             goal, feedback_callback=self.waypoint_following_feedback_cb
         )
-        rclpy.spin_until_future_complete(self, send_future)
+        print("sending future")
+        #rclpy.spin_until_future_complete(self, send_future)
+        print("sent future")
 
-        goal_handle = send_future.result()
+        print("setting waypoint server initial response callback")
+        # rclpy.spin_until_future_complete(self, result_future) # this is blocking
+        send_future.add_done_callback(self.waypoint_response_callback) # this is non-blocking
+        print("response callback set")
+        self.get_new_frontier = False
+        self.action_is_complete = False
+
+    def waypoint_response_callback(self, future):
+        goal_handle = future.result()
         if not goal_handle.accepted:
             self.get_logger().error("Goal rejected")
             return
 
         self.get_logger().info("Goal accepted")
 
-        result_future = goal_handle.get_result_async()
-        print("setting waypoint server done callback")
-        # rclpy.spin_until_future_complete(self, result_future) # this is blocking
-        result_future.add_done_callback(self.waypoint_following_finished_cb) # this is non-blocking
-        print("callback set")
-        self.get_new_frontier = False
-        self.action_is_complete = False
-
+        self.waypoint_result_future = goal_handle.get_result_async()
+        self.waypoint_result_future.add_done_callback(self.waypoint_following_finished_cb)
     def waypoint_following_finished_cb(self, future):
         result = future.result().result
         self.get_logger().info(
@@ -353,7 +367,7 @@ class SLAM_Exploration(Node):
         """Saves map with the current timestamp and any map name passed in on startup,
         then shuts down the node"""
         # TODO: IMPLEMENT THIS
-        pass
+        print("this is the part where it would save the map and end the node")
     
 
     def odom_cb(self, msg):

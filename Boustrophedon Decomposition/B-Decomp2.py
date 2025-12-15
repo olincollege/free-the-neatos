@@ -13,7 +13,10 @@ def b_decomp(map):
     Output:
         path: path (list of points) to traverse the map, hitting all the area
     """
-    print(get_col_intervals(10, map))
+    cells = build_bd_cells(map)
+    print(cells)
+    print(len(cells))
+
 def build_bd_cells(map):
     """
     Build the BD cells by matching free areas in columns to adjacent columns
@@ -31,8 +34,43 @@ def build_bd_cells(map):
             ]
         
     """
+    cells = []
+    current_cells = []
 
-def get_col_intervals(col, map):
+    #each column in map
+    for col in range(map.shape[1]):
+        intervals = get_col_intervals(map, col)
+        new_cells = []
+        #each interval of free space in the column
+        for interval in intervals:
+            matched = False
+            #check compatibility with current cells (do they overlap?)
+            for cell in current_cells:
+                #unpack previous column cells
+                prev_col = cell[-1][0]
+                prev_start = cell[-1][1]
+                prev_end = cell[-1][2]
+
+                #Do the current interval and previous overlap?
+                if not (interval[1] <= prev_start or interval[0] >= prev_end):
+                    #add cell to new cells
+                    cell.append((col, interval[0], interval[1]))
+                    new_cells.append(cell)
+                    matched = True
+                    break
+
+            #No matches??? ;)
+            if not matched:
+                #Add new cell
+                new_cell = [(col, interval[0], interval[1])]
+                cells.append(new_cell)
+                new_cells.append(new_cell)
+
+        #Update cells from this column
+        current_cells = new_cells
+    return cells
+
+def get_col_intervals(map, col):
     """
     Get the intervals of free space for a column
 
@@ -91,7 +129,6 @@ def sample_map():
     map[5:8, 21:24] = 1#00 #obstacle 4
     print(map) #vis map
     return map
-
 
 sample = sample_map()
 if __name__ == "__main__":

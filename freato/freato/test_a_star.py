@@ -1,4 +1,3 @@
-from numpy.ma.core import MaskedArrayFutureWarning
 import rclpy  # ros2 python
 from rclpy.node import Node  # ros node
 from nav_msgs.msg import OccupancyGrid  # SLAM map ros message type

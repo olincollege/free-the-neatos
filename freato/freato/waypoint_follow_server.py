@@ -9,6 +9,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionServer
 from nav_msgs.msg import Odometry
+from neato2_interfaces.msg import Bump
 from geometry_msgs.msg import Twist, PoseStamped, Pose
 from nav2_msgs.action import FollowWaypoints
 from rclpy.executors import MultiThreadedExecutor
@@ -37,6 +38,7 @@ class WaypointActionServer(Node):
         self.vel_pub = self.create_publisher(Twist, "cmd_vel", 10)
         self.create_subscription(Odometry, "/odom", self.process_odom, 10)
         self.marker_pub = self.create_publisher(Marker, "/target", 10)
+        self.create_subscription(Bump, "/bump", self.handle_bump, 10)
 
         # Setup tf2 to convert from odom to map frame
         self.tf_buffer = tf2_ros.Buffer()
@@ -70,6 +72,11 @@ class WaypointActionServer(Node):
 
         self.run_loop_num = 0
 
+        # Estop
+        self.estop = False
+        self.num_retrace_points = 8
+        self.curr_retrace_point = self.num_retrace_points
+
     def run_loop(self):
         self.run_loop_num += 1
         if self.goal_handle:
@@ -99,15 +106,27 @@ class WaypointActionServer(Node):
             distance_to_target_pose = self.distance_to_pose(target_pose)
 
             if distance_to_target_pose <= self.position_threshold:
-                self.pose_number += 1
-                if self.pose_number == self.num_poses:
-                    self.finish("success")
-                    return
+                if self.estop:
+                    self.pose_number -= 1
+                    self.curr_retrace_point -= 1
+                    if self.pose_number == -1 or self.curr_retrace_point == 0:
+                        self.estop = False
+                        self.curr_retrace_point = self.num_retrace_points
+                        self.finish("abort")
+                    else:
+                        print(f"Starting retrace waypoint {self.curr_retrace_point}")
                 else:
-                    print(f"Starting waypoint {self.pose_number}")
+                    self.pose_number += 1
+                    if self.pose_number == self.num_poses:
+                        self.finish("success")
+                        return
+                    else:
+                        print(f"Starting waypoint {self.pose_number}")
 
             if self.pose_number < self.num_poses:
                 target_angle = self.angle_to_pose(target_pose)
+                if self.estop:
+                    target_angle += math.pi
                 current_angle = self.position[2]
 
                 angle_diff = target_angle - current_angle
@@ -124,11 +143,15 @@ class WaypointActionServer(Node):
                     print(f"Current_angle: {math.degrees(current_angle)}")
                     print(f"Angular Velocity command {angular_vel_cmd}")
                     print(f"Distance to target pose: {distance_to_target_pose}")
+                    print(f"Angle diff: {angle_diff}")
                     print()
 
                 linear_vel_cmd = self.linear_velocity
-                if abs(angle_diff) > math.radians(20):
+                if abs(angle_wrap) > math.radians(20):
                     linear_vel_cmd = 0
+
+                if self.estop:
+                    linear_vel_cmd *= -1
 
                 self.send_drive_command(linear_vel_cmd, angular_vel_cmd)
 
@@ -150,6 +173,22 @@ class WaypointActionServer(Node):
         result = self.done_future.result()
         self.goal_handle = None
         return result
+
+    def handle_bump(self, msg: Bump):
+        if self.goal_handle is None:
+            return
+
+        if not self.estop:
+            if (
+                msg.left_front == 1
+                or msg.left_side == 1
+                or msg.right_front == 1
+                or msg.right_side == 1
+            ):
+                self.pose_number -= 1
+                if self.pose_number < 0:
+                    self.finish("abort")
+                self.estop = True
 
     def process_odom(self, msg):
         """
@@ -210,6 +249,9 @@ class WaypointActionServer(Node):
         return math.atan2(y_distance, x_distance)
 
     def finish(self, resolution):
+        if self.goal_handle is None:
+            return
+
         self.send_drive_command(0.0, 0.0)
         if resolution == "success":
             self.goal_handle.succeed()

@@ -1,47 +1,107 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-
-def b_decomp(map):
-    """
-    Run Boustrophedon Decomposition on Occupancy Map from Lidar
-    will generate path
-        
+def b_decomp(map, map_res, neato_width, overlap):
+    """ Run Boustrophedon Decomposition on Occupancy Map from Lidar
+        will generate path
     Inputs:
         map: occupancy grid (0 is free, 100 is occupied)
-
     Output:
         path: path (list of points) to traverse the map, hitting all the area
     """
     cells = build_bd_cells(map)
-    print(cells)
+    print("Num Cells:")
     print(len(cells))
+    paths = cells_to_paths(cells, map_res, neato_width, overlap)
+
+    plot_paths(map, paths, map_res)
+    
+
+def cells_to_paths(cells, map_res, n_width, overlap):
+    """ Convert all cells to a list of list of points (x,y)
+    Inputs:
+        cells: list of lists of tuples
+        map_res: resolution of the occupancy grid (size of the square)
+        n_width: width of neato (m)
+        overlap: how much we want the path to overlap (m)
+    Outputs:
+        paths = a list of lists of tuples with x,y values for points for the neato to go to
+    """
+    paths = [cell_to_path(cell, map_res, n_width, overlap) for cell in cells]
+    return paths
+
+def cell_to_path(cell, map_res, n_width, overlap):
+    """ Convert a cell to a list of points (x,y)
+    Inputs:
+        cell: list of 3 tuples
+        tuple format (column, start, end)
+        example of one cell
+        [ (0, 1, 4),   # column 0, rows 1 to 3 are free
+          (1, 2, 5),   # column 1, rows 2 to 4 are free
+          (2, 2, 4)    # column 2, rows 2 to 3 are free
+        ]
+        map_res: resolution of the occupancy grid (size of the square)
+        n_width: width of neato (m)
+        overlap: how much we want the path to overlap (m)
+    Outputs:
+        path: list of tuples with x,y values for points for the neato to go to
+    """
+    n_rad = n_width/2
+    step = n_width - overlap
+    path = []
+    start_col = cell[0][0]
+    end_col = cell[-1][0]
+    start_x = start_col*map_res + n_rad
+    end_x = end_col * map_res + map_res - n_rad
+    switch = True #True = up, False = down
+    x = start_x
+    while x <= end_x + 1e-6:
+        col = int(np.floor(x/map_res))
+        #get free interval in cell
+        interval = None
+        for c, start, end in cell:
+            if c == col:
+                interval = (start, end)
+                break
+        if interval is None:
+            x+=step
+            continue
+        y_min = interval[0]*map_res + n_rad
+        y_max = interval[1]*map_res - n_rad
+        #skip areas neato can't fit in
+        if y_min >= y_max:
+            x += step
+            continue
+        #add to path
+        if switch: #going up
+            path.append((round(x, 3), round(y_max, 3)))
+            path.append((round(x, 3), round(y_min, 3)))
+        else: #going down
+            path.append((round(x, 3), round(y_min, 3)))
+            path.append((round(x, 3), round(y_max, 3)))
+        switch = not switch
+        x += step
+    return path
+    return((start_x, end_x))
 
 def build_bd_cells(map):
-    """
-    Build the BD cells by matching free areas in columns to adjacent columns
-
+    """ Build the BD cells by matching free areas in columns to adjacent columns
     Inputs:
         map: occupancy grid
     Outputs:
         cells: list of lists of 3 tuples
         tuple format (column, start, end)
         example of one cell
-            [
-            (0, 1, 4),   # column 0, rows 1 to 3 are free
-            (1, 2, 5),   # column 1, rows 2 to 4 are free
-            (2, 2, 4)    # column 2, rows 2 to 3 are free
-            ]
-        
+        [ (0, 1, 4),   # column 0, rows 1 to 3 are free
+          (1, 2, 5),   # column 1, rows 2 to 4 are free
+          (2, 2, 4)    # column 2, rows 2 to 3 are free
+        ]
     """
     cells = []
-    current_cells = []
-
-    #each column in map
+    current_cells = [] #each column in map
     for col in range(map.shape[1]):
         intervals = get_col_intervals(map, col)
-        new_cells = []
-        #each interval of free space in the column
+        new_cells = [] #each interval of free space in the column
         for interval in intervals:
             matched = False
             #check compatibility with current cells (do they overlap?)
@@ -50,7 +110,6 @@ def build_bd_cells(map):
                 prev_col = cell[-1][0]
                 prev_start = cell[-1][1]
                 prev_end = cell[-1][2]
-
                 #Do the current interval and previous overlap?
                 if not (interval[1] <= prev_start or interval[0] >= prev_end):
                     #add cell to new cells
@@ -58,61 +117,47 @@ def build_bd_cells(map):
                     new_cells.append(cell)
                     matched = True
                     break
-
-            #No matches??? ;)
+            #No matches???
             if not matched:
                 #Add new cell
                 new_cell = [(col, interval[0], interval[1])]
                 cells.append(new_cell)
                 new_cells.append(new_cell)
-
         #Update cells from this column
         current_cells = new_cells
     return cells
 
 def get_col_intervals(map, col):
-    """
-    Get the intervals of free space for a column
-
+    """ Get the intervals of free space for a column
     Inputs:
         col: column index to search for intervals
-
     Outputs:
-        intervals: list of tuples with start and end indexes for intervals
-                   of free space
-                    For obstacle 5 to 9
-                   [(3, 5), (10, 20)]
-                   [(start, end), (start, end)]
+        intervals: list of tuples with start and end indexes for intervals of free space
+        For obstacle 5 to 9 [(3, 5), (10, 20)]
+        [(start, end), (start, end)]
     """
     intervals = []
     start = None
     end = None
     column = map[:, col]
-    switch = False #false --> looking for start
-                   #true --> looking for end
-
+    switch = False #false --> looking for start #true --> looking for end
     for i in range(map.shape[0]):
         if switch: #looking for end
             if (column[i] == 0)&(column[i+1] == 1):
                 end = i+1
                 intervals.append((start, end))
                 switch = False
-
         else: #looking for start
             if column[i] == 0:
                 start = i
                 switch = True
-
     return intervals
 
 def sample_map():
-    """
-    Generate a sample occupancy grid (map)
-
+    """ Generate a sample occupancy grid (map)
     Output:
         map: occupancy grid (0 is free, 100 is occupied)
     """
-
     h = 20 #height
     w = 30 #width
     map = np.zeros((h, w), dtype=np.int32)
@@ -121,15 +166,37 @@ def sample_map():
     map[0:h, w-1] = 1#00 #right wall
     map[0, 1:w-1] = 1#00 #right wall
     map[h-1, 1:w-1] = 1#00 #right wall
-
-
-    map[5:10, 10:11] = 1#00 #obstacle 1
+    map[5:11, 10:11] = 1#00 #obstacle 1
     map[11:12, 5:15] = 1#00 #obstacle 2
     map[18:19, 1:10] = 1#00 #obstacle 3
-    map[5:8, 21:24] = 1#00 #obstacle 4
+    map[5:11, 21:29] = 1#00 #obstacle 4
     print(map) #vis map
     return map
 
+def plot_paths(map, paths, map_res):
+    """Plot occupancy grid and overlay Boustrophedon paths"""
+    plt.figure(figsize=(10, 6))
+    plt.imshow(map, cmap='gray_r', origin='upper', extent=[0, map.shape[1]*map_res, 0, map.shape[0]*map_res])
+
+    # Plot each cell's path
+    for path in paths:
+        if len(path) == 0:
+            continue
+        xs = [p[0] for p in path]
+        ys = [map.shape[0]*map_res - p[1] for p in path]
+        plt.plot(xs, ys)  # marker optional
+
+    plt.title("Boustrophedon Coverage Paths")
+    plt.xlabel("X (meters)")
+    plt.ylabel("Y (meters)")
+    plt.grid(True)
+    plt.show()
+
+#Testing
 sample = sample_map()
+neato_width = 0.06 #m
+overlap = 0.01 #m
+map_res = 0.05 #m
+
 if __name__ == "__main__":
-    b_decomp(sample)
+    b_decomp(sample, map_res, neato_width, overlap)

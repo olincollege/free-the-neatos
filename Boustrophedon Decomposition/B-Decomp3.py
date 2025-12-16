@@ -7,14 +7,17 @@ def b_decomp(map, map_res, neato_width, overlap):
     Inputs:
         map: occupancy grid (0 is free, 100 is occupied)
     Output:
-        path: path (list of points) to traverse the map, hitting all the area
+        paths: list of paths (list of points) to traverse the map, hitting all the area
     """
     cells = build_bd_cells(map)
     print("Num Cells:")
     print(len(cells))
     paths = cells_to_paths(cells, map_res, neato_width, overlap)
-
+    #print(paths)
     plot_paths(map, paths, map_res)
+
+    return paths
+
     
 
 def cells_to_paths(cells, map_res, n_width, overlap):
@@ -46,43 +49,66 @@ def cell_to_path(cell, map_res, n_width, overlap):
     Outputs:
         path: list of tuples with x,y values for points for the neato to go to
     """
-    n_rad = n_width/2
+    n_rad = n_width / 2
     step = n_width - overlap
     path = []
+
+    # Compute X bounds of the cell
     start_col = cell[0][0]
     end_col = cell[-1][0]
-    start_x = start_col*map_res + n_rad
+    start_x = start_col * map_res + n_rad
     end_x = end_col * map_res + map_res - n_rad
-    switch = True #True = up, False = down
+
+    switch = True  # True = up, False = down
     x = start_x
+    prev_y = None  # track last Y to connect safely
+
     while x <= end_x + 1e-6:
-        col = int(np.floor(x/map_res))
-        #get free interval in cell
+        col = int(np.floor(x / map_res))
+
+        # find free interval in this column
         interval = None
         for c, start, end in cell:
             if c == col:
                 interval = (start, end)
                 break
         if interval is None:
-            x+=step
+            x += step
             continue
-        y_min = interval[0]*map_res + n_rad
-        y_max = interval[1]*map_res - n_rad
-        #skip areas neato can't fit in
+
+        y_min = interval[0] * map_res + n_rad
+        y_max = interval[1] * map_res - n_rad
+
         if y_min >= y_max:
             x += step
             continue
-        #add to path
-        if switch: #going up
-            path.append((round(x, 3), round(y_max, 3)))
-            path.append((round(x, 3), round(y_min, 3)))
-        else: #going down
-            path.append((round(x, 3), round(y_min, 3)))
-            path.append((round(x, 3), round(y_max, 3)))
+
+        # Determine vertical endpoints for this column
+        if switch:
+            top_y = y_max
+            bottom_y = y_min
+        else:
+            top_y = y_min
+            bottom_y = y_max
+
+        # Connect safely from previous point
+        if prev_y is not None:
+            # Horizontal move at a safe y (its not gonna crash while moving between christmas)
+            safe_y = min(max(prev_y, y_min), y_max)
+            xs = np.linspace(prev_x, x, max(2, int(abs(x - prev_x) / (map_res / 2))))
+            for xi in xs:
+                path.append((round(xi, 3), round(safe_y, 3)))
+
+        # Vertical move
+        path.append((round(x, 3), round(top_y, 3)))
+        path.append((round(x, 3), round(bottom_y, 3)))
+
+        prev_x = x
+        prev_y = bottom_y  # last Y after vertical sweep
         switch = not switch
         x += step
+
     return path
-    return((start_x, end_x))
 
 def build_bd_cells(map):
     """ Build the BD cells by matching free areas in columns to adjacent columns
@@ -143,7 +169,7 @@ def get_col_intervals(map, col):
     switch = False #false --> looking for start #true --> looking for end
     for i in range(map.shape[0]):
         if switch: #looking for end
-            if (column[i] == 0)&(column[i+1] == 1):
+            if (column[i] == 0)&(column[i+1] == 100): #00
                 end = i+1
                 intervals.append((start, end))
                 switch = False
@@ -162,19 +188,19 @@ def sample_map():
     w = 30 #width
     map = np.zeros((h, w), dtype=np.int32)
     # Add obstacles
-    map[0:h, 0] = 1#00 #left wall
-    map[0:h, w-1] = 1#00 #right wall
-    map[0, 1:w-1] = 1#00 #right wall
-    map[h-1, 1:w-1] = 1#00 #right wall
-    map[5:11, 10:11] = 1#00 #obstacle 1
-    map[11:12, 5:15] = 1#00 #obstacle 2
-    map[18:19, 1:10] = 1#00 #obstacle 3
-    map[5:11, 21:29] = 1#00 #obstacle 4
-    print(map) #vis map
+    map[0:h, 0] = 100 #left wall
+    map[0:h, w-1] = 100 #right wall
+    map[0, 1:w-1] = 100 #right wall
+    map[h-1, 1:w-1] = 100 #right wall
+    map[5:11, 10:11] = 100 #obstacle 1
+    map[11:12, 5:15] = 100 #obstacle 2
+    map[18:19, 1:10] = 100 #obstacle 3
+    map[5:11, 21:29] = 100 #obstacle 4
+    #print(map) #vis map
     return map
 
 def plot_paths(map, paths, map_res):
-    """Plot occupancy grid and overlay Boustrophedon paths"""
+    """Plot occupancy grid and overlay paths"""
     plt.figure(figsize=(10, 6))
     plt.imshow(map, cmap='gray_r', origin='upper', extent=[0, map.shape[1]*map_res, 0, map.shape[0]*map_res])
 

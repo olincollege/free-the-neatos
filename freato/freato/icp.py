@@ -1,8 +1,7 @@
 import numpy as np
 from scipy.spatial import KDTree
-from sklearn.neighbors import NearestNeighbors
 
-def tf_from_icp(source, target, T_init, max_iterations=20, tolerance=1e-6):
+def tf_from_icp(source, target, T_init, max_iterations=20, tolerance=1e-6, max_distance=1.0):
     """
     Performs iterative closest point (ICP) to align the source scan to the 
     target scan in order to find the best rigid transformation between the 2.
@@ -21,22 +20,19 @@ def tf_from_icp(source, target, T_init, max_iterations=20, tolerance=1e-6):
     src = source.copy()
     tgt = target.copy()
 
-    #target_tree = KDTree(tgt) # build kd-tree for target point cloud
-    target_tree = NearestNeighbors(n_neighbors=1, algorithm="ball_tree").fit(tgt)
+    target_tree = KDTree(tgt) # build kd-tree for target point cloud
     
     Tmat = T_init  # initialize total transformation matrix
+    ones = np.ones((src.shape[0], 1))
+    src_stacked = np.hstack((src, ones))
+    src_tf = (Tmat @ src_stacked.T).T[:, 0:2]  # apply T_init before loop
 
     mean_sq_error = 1.0e6  # initialize error as large number
     delta_err = 1.0e6    # change in error (used in stopping condition)
 
-    # **FIX: Apply initial transformation to source**
-    ones = np.ones((src.shape[0], 1))
-    src_stacked = np.hstack((src, ones))
-    src_tf = (Tmat @ src_stacked.T).T[:, 0:2]  # Apply T_init first!
-
     for _ in range(max_iterations):
         # find closest points
-        src_matched, tgt_matched, idx = findCorrespondences(src_tf, tgt, target_tree)
+        src_matched, tgt_matched, idx = findCorrespondences(src_tf, tgt, target_tree, max_distance)
 
         # align source to target via SVD
         Tmat_new = alignSVD(src_matched, tgt_matched)
@@ -45,22 +41,28 @@ def tf_from_icp(source, target, T_init, max_iterations=20, tolerance=1e-6):
         Tmat = Tmat_new @ Tmat
 
         # transform full source point cloud
+        ones = np.ones((src.shape[0], 1))
+        src_stacked = np.hstack((src, ones)) # create Nx3 to apply transformation
         src_tf = (Tmat @ src_stacked.T).T[:, 0:2] # results in Nx2 array
 
-        # calculate error using matched points only
-        new_err = np.mean(np.sum((src_matched - tgt_matched)**2, axis=1))
+        # find mean squared error between corresponding matched transformed source points and target points
+        new_err = 0
+        for i, idx_val in enumerate(idx):
+            if idx_val != -1:
+                diff = src_tf[i,:] - tgt[idx_val,:]
+                new_err += np.dot(diff, diff.T)
 
-        # Check convergence
+        new_err /= float(len(tgt_matched))
+
+        # update error and calculate delta error
         delta_err = abs(mean_sq_error - new_err)
-        mean_sq_error = new_err
-        
         if delta_err < tolerance:
             break
-
+        mean_sq_error = new_err
 
     return Tmat
 
-def findCorrespondences(source, target, target_tree):
+def findCorrespondences(source, target, target_tree, max_distance=1.0):
     """
     Find the closest points in target for each point in source.
 
@@ -74,44 +76,38 @@ def findCorrespondences(source, target, target_tree):
                         target points.
         idx: list of indices of the closest target points for each source point.
     """
+    
+    # query kd-tree for closest points
+    dist, idx = target_tree.query(source, k=1)
 
-    # Query for closest points
-    dist, idx = target_tree.kneighbors(source)
-    dist = dist.ravel()
-    idx = idx.ravel()
     
-    #dist, idx = target_tree.kneighbors(source)
-    dist = dist.ravel()
-    idx = idx.ravel()
-
-    max_correspondence_dist = 0.3  # meters - tune this!
+    valid_mask = dist < max_distance
     
-    # Filter by distance threshold
-    valid_mask = dist < max_correspondence_dist
-    
-    # Remove duplicate matches
+    # remove duplicate matches
     target_to_source = {}
     for i in range(len(idx)):
-        if not valid_mask[i]:
+        if not valid_mask[i]:  # skip potential outliers
             continue
         target_idx = idx[i]
         if target_idx not in target_to_source or dist[i] < target_to_source[target_idx][1]:
             target_to_source[target_idx] = (i, dist[i])
-    
-    # Build correspondence lists
+
+    # build array of nearest neighbor target points and corresponding source points
     valid_src_pts = []
     valid_tgt_pts = []
-    for target_idx, (source_idx, _) in target_to_source.items():
-        valid_src_pts.append(source[source_idx, :])
-        valid_tgt_pts.append(target[target_idx, :])
+    for i, idx_val in enumerate(idx):
+        if idx_val != -1:
+            valid_tgt_pts.append(target[idx_val, :])
+            valid_src_pts.append(source[i, :])
 
+    # if no valid matches, return empty arrays
     if len(valid_src_pts) == 0:
         return np.empty((0, 2)), np.empty((0, 2)), []
 
-    matched_src = np.array(valid_src_pts).reshape(-1, 2)
-    matched_tgt = np.array(valid_tgt_pts).reshape(-1, 2)
+    matched_src = np.array(valid_src_pts)
+    matched_tgt = np.array(valid_tgt_pts)
 
-    return matched_src, matched_tgt, list(target_to_source.keys())
+    return matched_src, matched_tgt, idx
 
 def alignSVD(matched_source, matched_target):
     """
@@ -141,6 +137,11 @@ def alignSVD(matched_source, matched_target):
 
     # compute rotation R and translation t from svd(M)
     R = U @ Vt
+
+    # ensure proper rotation (det(R)=+1)
+    if np.linalg.det(R) < 0:
+        Vt[-1, :] *= -1
+        R = U @ Vt
 
     t = tgt_centroid - R @ src_centroid
 

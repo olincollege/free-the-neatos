@@ -31,6 +31,7 @@ setup(
             "slam_exploration = freato.slam_exploration:main",
             "test_a_star = freato.test_a_star:main",
             "ekf = freato.ekf:main",
+            "cleaning = freato.cleaning:main",
         ],
     },
 )

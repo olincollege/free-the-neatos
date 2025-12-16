@@ -12,44 +12,74 @@ from rclpy.qos import qos_profile_sensor_data  # sensor profile for frontier pub
 import numpy as np  # quickly manipulate map array to find frontiers
 import math  # various calculations
 from freato.a_star import a_star, inflate_obstacles  # a_star implementation functions
-from slam_toolbox.srv import SaveMap
-from std_msgs.msg import String
-from datetime import datetime
+from slam_toolbox.srv import SaveMap # server for saving map
+from std_msgs.msg import String # for saving map
+from datetime import datetime # for saving map with time stamp
 
 
 class SLAM_Exploration(Node):
+    """ A ROS2 node to direct exploration during SLAM mapping
+    This node uses the ROS SLAM toolbox and a waypoint action server to generate
+    a SLAM map by selecting the most useful 'frontier' to travel to to build the
+    map further, then using A* to generate waypoints to send to the action
+    server. When there are no 'frontiers' left to pathfind to, it saves the map
+    to a file based on the timestamp.
+    Publishers:
+        self.path_pub: publishes the path the A* algorithm creates
+        self.inflated_map_pub: publishes the map A* uses to account for the
+            space the robot takes up when finding the best path around obstacles
+        self.frontiers_publisher: publishes frontiers as a particle cloud for
+            visualization in rviz
+    Subscribers: 
+        self.map_subscriber: subscribes to the latest maps from the SLAM toolbox
+        self.odom_subscriber: subscribes to robot odometry from the SLAM toolbox
+    Clients:
+        self.waypoints_client: calls waypoint follwing action server
+        self.save_map_client: calls action server that saves the latest SLAM map
+    
+    
+    """
     def __init__(self):
         super().__init__("slam_exploration")
 
         # Parameters to change
-        self.map_topic_name = "/map"
-        self.frontiers_topic_name = "NAME"
-        self.odom_topic_name = "/odom"
+        self.map_topic_name = "/map" # Name of map published by SLAM toolbox
+        self.odom_topic_name = "/odom" # Name of odom published by SLAM toolbox
         self.map_frame = "map"  # Name of map coordinate frame
-        self.particle_cloud_name = "particle_cloud"
-        self.robot_grid_width = 8
-        self.robot_diameter = 0.4
+        self.frontier_particle_cloud_name = "frontier_particles" # Name of
+                                                                 # published
+                                                                 # frontiers
+                                                                 # for rviz2
+        self.robot_grid_width = 8 # width of robot used for finding frontier
+                                  # areas the robot can fit in
+        self.robot_diameter = 0.4 # width of robot used for A* path planning
 
-        lower_empty_cell_percent = 30
-        upper_empty_cell_percent = 95
+        lower_empty_cell_percent = 30 # minimum % of empty cells vs. unknown to
+                                      # consider an unoccupied area a frontier
+        upper_empty_cell_percent = 95 # maximum % of ^^^
 
-        # Node variables
+        # Node variables and state tracking
 
-        self.get_new_frontier = True
-        self.unprocessed_map = False
+        self.get_new_frontier = True # True when the code to find a new frontier
+                                     # on the map should run
+        self.unprocessed_map = False # True when a map has been received from
+                                     # the SLAM toolbox but no frontier list has
+                                     # been made from it yet
 
-        self.latest_map = None
+        self.latest_map = None 
         self.latest_map_grid = None
 
-        self.end_when_action_done = False
-        # self.current_action = None
-        self.action_is_complete = True
+        self.end_when_action_done = False # True if there are no frontiers left
+                                          # but waypoint follower isn't done
+        self.action_is_complete = True # True after latest frontier is reached
 
-        self.waypoints_list = None
+        self.waypoints_list = None 
         self.num_waypoints = 0
         self.waypoint_result_future = None
+      
+        self.latest_odom = None
 
-        # an array of coordinates followed
+        # array and datatype for the weighted list of frontier coords
         self.dtype = [("row", int), ("col", int), ("weight", float)]
         self.ranked_frontier_coords = np.array([], dtype=self.dtype)
 
@@ -65,8 +95,8 @@ class SLAM_Exploration(Node):
                 cell[...] = (origin - itr.multi_index[0]) ** 2 + (
                     origin - itr.multi_index[1]
                 ) ** 2 < (float(self.robot_grid_width) / 2) ** 2
-                # print(cell)
-        print(self.CIRCLE_MASK)
+                
+        
         self.CIRCLE_CELL_COUNT = np.sum(self.CIRCLE_MASK)
         self.LOWER_EMPTY_CELL_COUNT = int(
             self.CIRCLE_CELL_COUNT * lower_empty_cell_percent / 100
@@ -74,12 +104,12 @@ class SLAM_Exploration(Node):
         self.UPPER_EMPTY_CELL_COUNT = int(
             self.CIRCLE_CELL_COUNT * upper_empty_cell_percent / 100
         )
-        print(
-            "Lower and upper empty cell count boundaries for frontier determination:",
-            self.LOWER_EMPTY_CELL_COUNT,
-            self.UPPER_EMPTY_CELL_COUNT,
-        )
-        print("out of total number of cells:", self.CIRCLE_CELL_COUNT)
+        # print(
+            # "Lower and upper empty cell count boundaries for frontier determination:",
+            # self.LOWER_EMPTY_CELL_COUNT,
+            # self.UPPER_EMPTY_CELL_COUNT,
+        # )
+        # print("Out of total number of cells:", self.CIRCLE_CELL_COUNT)
 
         # Subscriber to map topic: calls function to update frontiers
         self.map_subscriber = self.create_subscription(
@@ -90,11 +120,10 @@ class SLAM_Exploration(Node):
         self.odom_subscriber = self.create_subscription(
             Odometry, self.odom_topic_name, self.odom_cb, 10
         )
-        self.latest_odom = None
 
         # Publisher for rviz2 visualization of frontier coordinates
         self.frontiers_publisher = self.create_publisher(
-            ParticleCloud, self.particle_cloud_name, qos_profile_sensor_data
+            ParticleCloud, self.frontier_particle_cloud_name, qos_profile_sensor_data
         )
 
         # Publisher for the current waypoint trajectory to frontiers
@@ -124,7 +153,7 @@ class SLAM_Exploration(Node):
         # wait until map exists
         if self.latest_map is None:
             return
-        # print("running loop")
+        
         if self.get_new_frontier:
             if self.unprocessed_map:
                 print("update map")
@@ -139,7 +168,7 @@ class SLAM_Exploration(Node):
                     if self.action_is_complete:
                         self.save_map_and_end_node()
                     return
-            print("is the action complete?", self.action_is_complete)
+            
             if self.action_is_complete:
                 if self.end_when_action_done:
                     self.save_map_and_end_node()
@@ -156,12 +185,16 @@ class SLAM_Exploration(Node):
                 self.publish_inflated_map()
 
     def update_map(self, msg):
+        """Callback to save latest map from SLAM toolbox
+        self.latest_map holds the ros message and metadata
+        self.latest_map_grid holds the map as a numpy array
+        """
         self.latest_map = msg
         self.latest_map_grid = np.array(msg.data).reshape(
             (msg.info.height, msg.info.width)
         )
-        print("Map has shape:", self.latest_map_grid.shape)
-        self.unprocessed_map = True
+        # print("Map has shape:", self.latest_map_grid.shape)
+        self.unprocessed_map = True 
         self.get_logger().info("Received new map")
 
     def update_frontiers(self):
@@ -169,7 +202,7 @@ class SLAM_Exploration(Node):
         Function that creates a ranked list of unexplored 'frontiers'
         These frontiers are points the robot can occupy that are roughly on
         the boundary of explored and unexplored space. They are ranked based
-        on how close they are to a set distance away from the robot. This
+        on how close they are to a set distance away from the robot. The ordered
         list of frontier coordinates is saved to self.ranked_frontier_coords.
         """
         map = self.latest_map
@@ -181,6 +214,7 @@ class SLAM_Exploration(Node):
         map_grid = self.latest_map_grid
         var = 0
 
+        # loop through every robot-sized spot in the map
         itr = np.nditer(
             map_grid[
                 : map_grid.shape[0] - self.robot_grid_width,
@@ -190,27 +224,23 @@ class SLAM_Exploration(Node):
         )
         for i in itr:
             empty_cell_count = 0
-            # print("start location",itr.multi_index)
             initial_zero = itr.multi_index[0]
             initial_one = itr.multi_index[1]
             additional_0 = itr.multi_index[0] + self.robot_grid_width
             additional_1 = itr.multi_index[1] + self.robot_grid_width
             partial_grid = map_grid[initial_zero:additional_0, initial_one:additional_1]
 
-            # print("size of partial grid",partial_grid.shape)
+            # loop through every element in a circular area around each point
             mask_itr = np.nditer(partial_grid, flags=["multi_index"])
-            # mask_itr = np.nditer(map_grid[itr.multi_index[0]:itr.multi_index[0]+self.robot_width][itr.multi_index[1]:itr.multi_index[1]+self.robot_width], flags=['multi_index'])
             for cell in mask_itr:
-                # print(mask_itr.multi_index)
-                # print(cell, type(cell))
                 if self.CIRCLE_MASK[mask_itr.multi_index[0]][mask_itr.multi_index[1]]:
-                    if cell == 100:
+                    if cell == 100: # obstacle at this point, not a frontier
                         empty_cell_count = self.UPPER_EMPTY_CELL_COUNT + 1
                         break
                     else:
                         if cell == 0:
                             empty_cell_count += 1
-            if (
+            if ( # determine if this point is a frontier and how useful it is
                 self.LOWER_EMPTY_CELL_COUNT
                 < empty_cell_count
                 < self.UPPER_EMPTY_CELL_COUNT
@@ -229,7 +259,6 @@ class SLAM_Exploration(Node):
         self.ranked_frontier_coords.sort(order="weight")
         # with np.printoptions(threshold=np.inf):
         #     print(self.ranked_frontier_coords)
-        # Remember to convert them!!!!!!!!!!!!
         self.publish_frontiers(self.ranked_frontier_coords, map.header.stamp, map.info)
         duration = str(
             float(self.get_clock().now().nanoseconds - start_time) / 1_000_000_000
@@ -237,11 +266,11 @@ class SLAM_Exploration(Node):
         _ = self.get_logger().info("List updated in %s seconds" % duration)
 
     def publish_frontiers(self, frontiers, timestamp, map_info):
+        """Publish frontiers as a particle cloud for visualization"""
         msg = ParticleCloud()
         msg.header.frame_id = self.map_frame
         msg.header.stamp = timestamp
         for frontier in frontiers[:1]:
-            # TODO: Turn into method to offset by the correct amount
             frontier_pose = Pose(
                 position=Point(
                     x=self.frontier_list_grid_col_to_x_pos(frontier["col"]),
@@ -256,8 +285,13 @@ class SLAM_Exploration(Node):
 
     def frontier_list_grid_col_to_x_pos(self, col_index):
         """
-        Converts a column in the map grid into its x position in the map frame
-        Also handles the offset used by the array when finding frontiers
+        Converts a column in the map grid into its x position in the map frame.
+        Handles the offset used by the top-left array indexing when determining
+        valid frontiers.
+        Args:
+            col_index: the column in the map grid
+        Returns:
+            the x position in the map frame of the center of this column
         """
         return (
             self.latest_map.info.origin.position.x

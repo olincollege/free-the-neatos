@@ -40,8 +40,8 @@ def generate_launch_description():
             name='ekf',
             output='screen',
             parameters=[{
-                'x_init': 1.36,
-                'y_init': 3.09,
+                'x_init': 0.00,
+                'y_init': 0.00,
                 'theta_init': 0.0,
                 'p_init_diag': [0.05, 0.05, 0.05]
             }]

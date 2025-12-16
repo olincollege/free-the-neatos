@@ -5,6 +5,7 @@ import rclpy
 from nav_msgs.srv import GetMap
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
+from scipy.spatial import KDTree
 
 class OccupancyField(object):
     """ Stores an occupancy field for an input map.  An occupancy field returns
@@ -51,12 +52,17 @@ class OccupancyField(object):
                     occupied[curr, 0] = float(i)
                     occupied[curr, 1] = float(j)
                     curr += 1
-        node.get_logger().info("building ball tree")
+        node.get_logger().info("building KDTree tree")
         # use super fast scikit learn nearest neighbor algorithm
-        nbrs = NearestNeighbors(n_neighbors=1,
-                                algorithm="ball_tree").fit(occupied)
-        node.get_logger().info("finding neighbors")
-        distances, indices = nbrs.kneighbors(X)
+        # nbrs = NearestNeighbors(n_neighbors=1,
+        #                         algorithm="ball_tree").fit(occupied)
+        # node.get_logger().info("finding neighbors")
+        # distances, indices = nbrs.kneighbors(X)
+
+        # use scipy KDTree
+        tree = KDTree(occupied)
+        node.get_logger().info("querying KDTree")
+        distances, indices = tree.query(X, k=1)
 
         node.get_logger().info("populating occupancy field")
         self.closest_occ = np.zeros((self.map.info.width, self.map.info.height))
@@ -64,7 +70,7 @@ class OccupancyField(object):
         for i in range(self.map.info.width):
             for j in range(self.map.info.height):
                 self.closest_occ[i, j] = \
-                    distances[curr][0]*self.map.info.resolution
+                    distances[curr]*self.map.info.resolution
                 curr += 1
         self.occupied = np.array(occupied) * self.map.info.resolution
         node.get_logger().info("occupancy field ready")

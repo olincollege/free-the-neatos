@@ -161,11 +161,11 @@ class ExtendedKalmanFilter(Node):
         L = np.array([[math.cos(X[2] + u[1]/2), -0.5 * u[0] * math.sin(X[2] + u[1]/2)],
                       [math.sin(X[2] + u[1]/2),  0.5 * u[0] * math.cos(X[2] + u[1]/2)],
                       [0, 1]])
-        
-        # Velocity-dependent noise
-        sigma_v = 0.05
-        sigma_w = np.deg2rad(5)
-        M = np.diag([sigma_v**2, sigma_w**2])
+
+        # constructing motion model covariance
+        ds_std = 0.04
+        dtheta_std = np.deg2rad(10)
+        M = np.diag([ds_std**2, ds_std**2, dtheta_std**2])
 
         Q = L @ M @ L.T
         P_pred_next = F @ P @ F.T + Q
@@ -190,10 +190,9 @@ class ExtendedKalmanFilter(Node):
         y = X_measured - (H @ X_pred_next)  # measurement residual
         y[2] = self.tf_helper.angle_normalize(y[2])  # normalize angle difference
         
-        # Increase uncertainty with velocity
-        pos_std = 0.2
-        ang_std = np.deg2rad(15)
-
+        # constructing measurement noise covariance
+        pos_std = 0.1
+        ang_std = np.deg2rad(10)
         R = np.diag([pos_std**2, pos_std**2, ang_std**2]) # measurement noise covariance, tune as needed
         S = H @ P_pred_next @ H.T + R
 
@@ -299,24 +298,38 @@ class ExtendedKalmanFilter(Node):
             return
 
         # compute change in position and orientation
-        dx = msg.pose.pose.position.x - self.last_odom_pose.pose.pose.position.x
-        dy = msg.pose.pose.position.y - self.last_odom_pose.pose.pose.position.y
-        ds = math.sqrt(dx**2 + dy**2)
+        #dx = msg.pose.pose.position.x - self.last_odom_pose.pose.pose.position.x
+        #dy = msg.pose.pose.position.y - self.last_odom_pose.pose.pose.position.y
+
+        # compute current and previous odom pose w/ Gaussian noise
+        x_curr = np.random.normal(msg.pose.pose.position.x, 0.04)
+        y_curr = np.random.normal(msg.pose.pose.position.y, 0.04)
+        x_prev = np.random.normal(self.last_odom_pose.pose.pose.position.x, 0.04)
+        y_prev = np.random.normal(self.last_odom_pose.pose.pose.position.y, 0.04)
         
+        # compute change in position
+        dx = x_curr - x_prev
+        dy = y_curr - y_prev
+        ds = math.sqrt(dx**2 + dy**2)
+
         # extract yaw angles
         q_now = msg.pose.pose.orientation
         q_prev = self.last_odom_pose.pose.pose.orientation
 
-        yaw_now = euler_from_quaternion(
+        yaw_curr = euler_from_quaternion(
             q_now.x, q_now.y, q_now.z, q_now.w
         )[2]
+
+        yaw_curr = np.random.normal(yaw_curr, np.deg2rad(10))
 
         yaw_prev = euler_from_quaternion(
             q_prev.x, q_prev.y, q_prev.z, q_prev.w
         )[2]
 
+        yaw_prev = np.random.normal(yaw_prev, np.deg2rad(10))
+
         # compute change in orientation
-        dtheta = self.tf_helper.angle_normalize(yaw_now - yaw_prev)
+        dtheta = self.tf_helper.angle_normalize(yaw_curr - yaw_prev)
 
         # assign to control input
         self.u[0] = ds

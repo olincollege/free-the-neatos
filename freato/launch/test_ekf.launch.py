@@ -7,44 +7,52 @@ from launch_ros.actions import Node
 from launch.substitutions import LaunchConfiguration
 import os
 
-def generate_launch_description():
-    map_file = DeclareLaunchArgument('map_yaml')
 
-    lifecycle_nodes = ['map_server']
-    use_sim_time = DeclareLaunchArgument('use_sim_time', default_value="true")
+def generate_launch_description():
+    map_file = DeclareLaunchArgument("map_yaml")
+
+    lifecycle_nodes = ["map_server"]
+    use_sim_time = DeclareLaunchArgument("use_sim_time", default_value="true")
     autostart = True
 
     start_lifecycle_manager = Node(
-            package='nav2_lifecycle_manager',
-            executable='lifecycle_manager',
-            name='lifecycle_manager',
-            output='screen',
-            emulate_tty=True,  # https://github.com/ros2/launch/issues/188
-            parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')},
-                        {'autostart': autostart},
-                        {'node_names': lifecycle_nodes}])
+        package="nav2_lifecycle_manager",
+        executable="lifecycle_manager",
+        name="lifecycle_manager",
+        output="screen",
+        emulate_tty=True,  # https://github.com/ros2/launch/issues/188
+        parameters=[
+            {"use_sim_time": LaunchConfiguration("use_sim_time")},
+            {"autostart": autostart},
+            {"node_names": lifecycle_nodes},
+        ],
+    )
 
-    return LaunchDescription([
-        map_file,
-        use_sim_time,
-        Node(
-            package='nav2_map_server',
-            executable='map_server',
-            name='map_server',
-            parameters=[{"yaml_filename": LaunchConfiguration('map_yaml')}],
-            output='screen'
-        ),
-        Node(
-            package='freato',
-            executable='ekf',
-            name='ekf',
-            output='screen',
-            parameters=[{
-                'x_init': 0.00,
-                'y_init': 0.00,
-                'theta_init': 0.0,
-                'p_init_diag': [0.05, 0.05, 0.05]
-            }]
-        ),
-        start_lifecycle_manager
-    ])
+    return LaunchDescription(
+        [
+            map_file,
+            use_sim_time,
+            Node(
+                package="nav2_map_server",
+                executable="map_server",
+                name="map_server",
+                parameters=[{"yaml_filename": LaunchConfiguration("map_yaml")}],
+                output="screen",
+            ),
+            Node(
+                package="freato",
+                executable="ekf",
+                name="ekf",
+                output="screen",
+                parameters=[
+                    {
+                        "x_init": 5.13,
+                        "y_init": 3.1,
+                        "theta_init": 0.0,
+                        "p_init_diag": [0.05, 0.05, 0.05],
+                    }
+                ],
+            ),
+            start_lifecycle_manager,
+        ]
+    )

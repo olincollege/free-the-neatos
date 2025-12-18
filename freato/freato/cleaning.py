@@ -1,12 +1,11 @@
-import math
-import time
+"""This file contains the ROS node to command cleaning through coverage path planning"""
 
 import numpy as np
 import rclpy
 import tf2_ros
-from geometry_msgs.msg import Point, Pose, PoseStamped, Twist
+from geometry_msgs.msg import PoseStamped, Twist
 from nav2_msgs.action import FollowWaypoints
-from nav_msgs.msg import OccupancyGrid, Path, Odometry
+from nav_msgs.msg import Path, Odometry
 from nav_msgs.srv import GetMap
 from rclpy.action import ActionClient
 from rclpy.node import Node
@@ -24,18 +23,18 @@ class Cleaning(Node):
         super().__init__("cleaning")
 
         # Parameters
-        self.robot_diameter = 0.4
-        self.cleaning_clearance = 0.3
-        self.overlap = 0.2
-        self.bump_waypoint_skip = 8
+        self.robot_diameter = 0.4  # width of robot used for A* path planning
+        self.cleaning_clearance = 0.3  # extra clearance when generating cleaning lanes
+        self.overlap = 0.2  # lane overlap to avoid missed strips
+        self.bump_waypoint_skip = 8  # how many waypoints to skip forward after a bump
         self.position = []
 
         # State: get_to_cell, cleaning
-        self.state = "get_to_cell"
-        self.cell_number = 0
-        self.waypoint_num = -1
-        self.shutdown = False
-        self.calling_waypoint_server = False
+        self.state = "get_to_cell"  # which phase the robot is in
+        self.cell_number = 0  # current cleaning cell index
+        self.waypoint_num = -1  # waypoint index to resume from after a bump
+        self.shutdown = False  # flag to end node
+        self.calling_waypoint_server = False  # prevents overlapping action calls
 
         # Set up publishers and subscriptions
         self.vel_pub = self.create_publisher(Twist, "cmd_vel", 10)
@@ -56,10 +55,10 @@ class Cleaning(Node):
 
         self.a_star_inflated_map = inflate_obstacles(
             self.map_grid, self.robot_diameter + 0.1, self.map_resolution
-        )
+        )  # used when traveling between cells
         self.cleaning_inflated_map = inflate_obstacles(
             self.map_grid, self.cleaning_clearance, self.map_resolution
-        )
+        )  # used for coverage decomposition
 
         # Setup tf2 to convert from odom to map frame
         self.tf_buffer = tf2_ros.Buffer()
@@ -73,13 +72,15 @@ class Cleaning(Node):
         self.create_timer(0.01, self.run_loop)
 
     def run_loop(self):
-        # print(self.state)
+        """Main state machine loop for navigating to cells and cleaning them"""
+        # If we're already waiting on waypoint follower, don't enqueue another goal
         if self.calling_waypoint_server:
             return
 
         if self.state == "get_to_cell" and self.position:
 
             if self.cell_number == len(self.cleaning_path):
+                # All cells processed; nothing more to send
                 print("Finished cleaning")
 
             start_point = self.coords_to_indices(self.position[0], self.position[1])
@@ -88,12 +89,15 @@ class Cleaning(Node):
             if self.waypoint_num == -1:
                 # print(self.cleaning_path)
                 if cell:
+                    # Normal entry to a cell: head to its first waypoint
                     first_cell_point = cell[0]
                 else:
+                    # Empty cell, advance to next
                     self.cell_number += 1
                     return
             # Need to get back on track
             else:
+                # Skip to the first missed waypoint inside this cell
                 first_cell_point = cell[self.waypoint_num]
                 print(f"Running A* to get back on track")
 
@@ -106,10 +110,12 @@ class Cleaning(Node):
                     f"A* to start cell {self.cell_number} at ({first_cell_point[0]:2f}, {first_cell_point[1]:2f}) failed"
                 )
 
+            # Convert grid waypoints back into map-frame meters for navigation
             map_positions_to_start = self.index_coords_to_points(map_coords_to_start)
             map_poses_to_start = self.points_to_pose_stamped(map_positions_to_start)
             self.publish_path(map_poses_to_start)
-            self.calling_waypoint_server = True
+            self.calling_waypoint_server = True  # block new goals until action returns
+            # Hand off to nav stack to reach the cell entry point
             self.call_waypoint_follow_server(map_poses_to_start)
             print(f"Following A* to cell {self.cell_number}")
 
@@ -118,16 +124,22 @@ class Cleaning(Node):
             cleaning_path = self.cleaning_path[self.cell_number]
 
             if self.waypoint_num > 0:
+                # Resume from the bumped waypoint instead of starting at the top
                 cleaning_path = cleaning_path[self.waypoint_num :]
                 print(f"Resuming cleaning from waypoint {self.waypoint_num}")
+            else:
+                # Fresh pass through the cell, start at its first waypoint
+                self.waypoint_num = 0
 
             cleaning_poses = self.points_to_pose_stamped(cleaning_path)
             self.publish_path(cleaning_poses)
-            self.calling_waypoint_server = True
+            self.calling_waypoint_server = True  # avoid queueing overlapping cell goals
+            # Call waypoint follower to cover the current cell
             self.call_waypoint_follow_server(cleaning_poses)
             print(f"Cleaning {self.cell_number}")
 
     def get_cleaning_path(self):
+        """Build the list of cleaning cell paths using Boustrophedon decomposition"""
         path = b_decomp(
             self.cleaning_inflated_map,
             self.map_resolution,
@@ -135,35 +147,21 @@ class Cleaning(Node):
             self.overlap,
         )
         non_empty_paths = []
-        # map_width_m = self.map_grid.shape[1] * self.map_resolution
-        # map_height_m = self.map_grid.shape[0] * self.map_resolution
         for cell in path:
             cell_coords = []
             for coord in cell:
                 if not coord:
                     continue
                 x, y = coord
+                # Shift decomposition coords (relative to map origin) into map frame
                 cell_coords.append((x + self.map_x_origin, y + self.map_y_origin))
-                # cell_coords.append(
-                #     (
-                #         (map_width_m - x) + self.map_x_origin,
-                #         y + self.map_y_origin,
-                #     )
-                # )
             if cell_coords:
                 non_empty_paths.append(cell_coords)
 
         return non_empty_paths
 
     def process_odom(self, msg):
-        """
-        Callback function for /odom subscription.
-
-        Updates the robot's current position and orientation based on Odometry data.
-
-        Args:
-            msg (Odometry): The Odometry message containing pose and orientation.
-        """
+        """Callback function for /odom subscription"""
         map_pose = self.odom_to_map(msg)
         if map_pose:
             q = map_pose.orientation
@@ -175,16 +173,21 @@ class Cleaning(Node):
             ]
 
     def get_map(self):
+        """Retrieve the static map from the map server and convert to numpy grid"""
         while not self.map_cli.wait_for_service(timeout_sec=1.0):
             self.get_logger().info("service not available, waiting again...")
         map_future = self.map_cli.call_async(GetMap.Request())
-        rclpy.spin_until_future_complete(self, map_future)
+        rclpy.spin_until_future_complete(
+            self, map_future
+        )  # block until map is received
         map = map_future.result().map
         map_grid = np.array(map.data).reshape((map.info.height, map.info.width))
+        # Treat occupied cells as 100 and everything else as free
         map_grid = np.where(map_grid == 100, 100, 0).astype(map_grid.dtype)
         return map, map_grid
 
     def odom_to_map(self, odom_msg):
+        """Transform a pose from odom frame into map frame"""
         pose_odom = PoseStamped()
         pose_odom.header = odom_msg.header
         pose_odom.pose = odom_msg.pose.pose
@@ -206,6 +209,7 @@ class Cleaning(Node):
         return pose_map
 
     def call_waypoint_follow_server(self, poses):
+        """Calls the waypoint following server and sets relevant variables"""
         if not self.waypoints_client.wait_for_server(timeout_sec=2.0):
             self.get_logger().error("follow_points action server not available")
             return
@@ -214,6 +218,7 @@ class Cleaning(Node):
         goal.poses = poses
 
         send_future = self.waypoints_client.send_goal_async(goal)
+        # Attach callbacks so we can react once the action server responds/finishes
         send_future.add_done_callback(self._on_goal_response)
 
     def _on_goal_response(self, future):
@@ -237,6 +242,7 @@ class Cleaning(Node):
             self.waypoint_num += missed_waypoints[0] + self.bump_waypoint_skip
             if self.waypoint_num < len(self.cleaning_path[self.cell_number]):
                 self.state = "get_to_cell"
+                # After a bump, jump forward in the same cell to avoid the obstacle
                 print(f"Bump sensor triggered, going to waypoint: {self.waypoint_num}")
             else:
                 self.waypoint_num = -1
@@ -247,12 +253,27 @@ class Cleaning(Node):
         self.calling_waypoint_server = False
 
     def coords_to_indices(self, x, y):
+        """Turns a position in the map frame into map grid row and col
+        Args:
+            x: the x position in actual distance in the map frame
+            y: the y position in actual distance in the map frame
+        Returns:
+            (row, col): a tuple of the integer grid coordinates on the map grid
+        """
         col = int((x - self.map_x_origin) / self.map_resolution)
         row = int((y - self.map_y_origin) / self.map_resolution)
 
         return (row, col)
 
     def make_pose(self, x, y, frame_id="odom"):
+        """Turns an x-y position into a ROS pose
+        Args:
+            x: the x position in actual distance in the frame_id frame
+            y: the y position in actual distance in the frame_id frame
+            frame_id: the ROS reference frame the coordinates are in
+        Returns:
+            A PoseStamped position that can be understood by ROS
+        """
         ps = PoseStamped()
         ps.header.frame_id = frame_id
         ps.header.stamp = self.get_clock().now().to_msg()
@@ -263,6 +284,12 @@ class Cleaning(Node):
         return ps
 
     def points_to_pose_stamped(self, points):
+        """Turns a list of map-frame (x, y) points into a list of ROS poses
+        Args:
+            points: a list of (x, y) points in the map frame
+        Returns:
+            the list of points as a list of ROS poses
+        """
 
         poses = []
         for [x, y] in points:
@@ -272,6 +299,7 @@ class Cleaning(Node):
         return poses
 
     def next_state(self):
+        """Advance the cleaning state machine to the next phase"""
         if self.state == "get_to_cell":
             self.state = "cleaning"
         elif self.state == "cleaning":
@@ -282,6 +310,7 @@ class Cleaning(Node):
             print(f"State is abnormal: {self.state}")
 
     def index_coords_to_points(self, coords):
+        """Convert map grid indices back to map-frame (x, y) points"""
         points = []
         for [row, col] in coords:
             x = self.map_x_origin + self.map_resolution * col
@@ -291,6 +320,7 @@ class Cleaning(Node):
         return points
 
     def publish_path(self, poses):
+        """Publish a ROS Path message made from a list of poses"""
         path = Path()
         path.header.frame_id = "map"
         path.header.stamp = self.get_clock().now().to_msg()

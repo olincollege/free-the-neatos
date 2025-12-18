@@ -1,6 +1,4 @@
-"""
-This is a ROS action server to follow waypoints.
-"""
+"""ROS action server that follows a list of waypoints, with bump-triggered retrace."""
 
 import math
 import concurrent.futures
@@ -8,33 +6,39 @@ import concurrent.futures
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionServer
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.time import Time
 from nav_msgs.msg import Odometry
 from neato2_interfaces.msg import Bump
 from geometry_msgs.msg import Twist, PoseStamped, Pose
 from nav2_msgs.action import FollowWaypoints
-from rclpy.executors import MultiThreadedExecutor
-from rclpy.time import Time
 from visualization_msgs.msg import Marker
 
 import tf2_ros
 from tf2_geometry_msgs import do_transform_pose
+
+from freato.angle_helpers import quaternion_to_yaw
 
 
 class WaypointActionServer(Node):
 
     def __init__(self):
         """
-        Initializes the Letterbox node.
-        Starts keyboard listener and letter drawing threads.
-        Initializes position tracking and control flags.
+        Initialize the waypoint server node.
 
-        Publishers: `cmd_vel`
-        Subscribers: `/odom`
+        Publishers:
+            cmd_vel: geometry_msgs/Twist drive commands
+            /target: visualization_msgs/Marker for RViz
+
+        Subscribers:
+            /odom: nav_msgs/Odometry for pose tracking
+            /bump: neato2_interfaces/Bump to trigger retrace
         """
 
         super().__init__("waypoint_action_server")
 
-        # Set up publishers and subscriptions
+        # Set up publishers/subscriptions: drive commands, odom tracking, RViz markers,
+        # and bump sensor feedback for retracing
         self.vel_pub = self.create_publisher(Twist, "cmd_vel", 10)
         self.create_subscription(Odometry, "/odom", self.process_odom, 10)
         self.marker_pub = self.create_publisher(Marker, "/target", 10)
@@ -44,40 +48,43 @@ class WaypointActionServer(Node):
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
-        # Run loop
+        # Run loop drives the proportional controller toward the active waypoint
         self.create_timer(0.05, self.run_loop)
 
-        # Speed parameters
+        # Speed parameters for the controller
         self.angular_velocity = math.pi / 4
         self.linear_velocity = 0.15
 
-        # Initialize the action server
+        # Initialize the action server that accepts waypoint batches
         self._action_server = ActionServer(
             self, FollowWaypoints, "follow_points", self.execute_callback
         )
 
-        # Position in map frame
+        # Position in map frame (x, y, yaw); populated once odom transforms work
         self.position = []
 
-        # Reached reached position threshold
+        # Distance threshold for waypoint completion
         self.position_threshold = 0.15
 
-        # Callback and route progress
+        # Callback and route progress tracking
         self.goal_handle = None
         self.pose_number = 0
         self.done_future = None
 
-        # Controller constant
+        # Controller constant for angular velocity
         self.proportional_constant = 0.5
 
-        self.run_loop_num = 0
+        self.run_loop_num = 0  # used to throttle debug output
 
-        # Estop
+        # Estop/retrace bookkeeping for bump handling
         self.estop = False
         self.num_retrace_points = 4
         self.curr_retrace_point = self.num_retrace_points
 
     def run_loop(self):
+        """
+        Main control loop that drives toward the current waypoint.
+        """
         self.run_loop_num += 1
         if self.goal_handle:
 
@@ -86,27 +93,15 @@ class WaypointActionServer(Node):
                 return
 
             target_pose = self.target_pose
-
-            m = Marker()
-            m.header.frame_id = "map"
-            m.header.stamp = self.get_clock().now().to_msg()
-            m.ns, m.id = "debug", 0
-            m.type, m.action = Marker.SPHERE, Marker.ADD
-
-            m.pose.position.x = target_pose.position.x
-            m.pose.position.y = target_pose.position.y
-            m.pose.position.z = 0.0
-            m.pose.orientation.w = 1.0
-
-            m.scale.x = m.scale.y = m.scale.z = 0.2
-            m.color.r, m.color.a = 1.0, 1.0  # alpha must be > 0
-
-            self.marker_pub.publish(m)
+            # Publish a marker to visualize the current waypoint target
+            self.publish_target_marker(target_pose)
 
             distance_to_target_pose = self.distance_to_pose(target_pose)
 
+            # Reached waypoint if neato is within threshold
             if distance_to_target_pose <= self.position_threshold:
                 if self.estop:
+                    # Retrace mode counts down waypoints until the abort logic runs
                     self.pose_number -= 1
                     self.curr_retrace_point -= 1
                     if self.pose_number == -1 or self.curr_retrace_point == 0:
@@ -118,6 +113,7 @@ class WaypointActionServer(Node):
                     else:
                         print(f"Starting retrace waypoint {self.curr_retrace_point}")
                 else:
+                    # Forward mode: advance to the next waypoint or end goal
                     self.pose_number += 1
                     if self.pose_number == self.num_poses:
                         self.finish("success")
@@ -128,15 +124,17 @@ class WaypointActionServer(Node):
             if self.pose_number < self.num_poses:
                 target_angle = self.angle_to_pose(target_pose)
                 if self.estop:
+                    # Reverse direction by flipping heading 180 degrees
                     target_angle += math.pi
                 current_angle = self.position[2]
 
                 angle_diff = target_angle - current_angle
+                # Normalize difference to [-pi, pi] for proportional control
                 angle_wrap = (angle_diff + math.pi) % (2 * math.pi) - math.pi
 
                 angular_vel_cmd = self.proportional_constant * angle_wrap
 
-                # Clip to range
+                # Clip to be reasonable command
                 angular_vel_cmd = min(angular_vel_cmd, self.angular_velocity)
                 angular_vel_cmd = max(angular_vel_cmd, -self.angular_velocity)
 
@@ -150,14 +148,22 @@ class WaypointActionServer(Node):
 
                 linear_vel_cmd = self.linear_velocity
                 if abs(angle_wrap) > math.radians(20):
+                    # If large error, rotate in place
                     linear_vel_cmd = 0
 
                 if self.estop:
+                    # If retracing, drive backwards
                     linear_vel_cmd *= -1
 
                 self.send_drive_command(linear_vel_cmd, angular_vel_cmd)
 
     def execute_callback(self, goal_handle):
+        """
+        Action callback that receives waypoint lists and starts execution.
+
+        Args:
+            goal_handle: message goal handle
+        """
         goal_poses = goal_handle.request.poses
         print(f"{len(goal_poses)} Waypoints Received")
 
@@ -170,7 +176,7 @@ class WaypointActionServer(Node):
             return result
 
         self.goal_handle = goal_handle
-        self.estop = False
+        self.estop = False  # start moving forward again for new route
         self.curr_retrace_point = self.num_retrace_points
 
         self.done_future = concurrent.futures.Future()
@@ -179,6 +185,12 @@ class WaypointActionServer(Node):
         return result
 
     def handle_bump(self, msg: Bump):
+        """
+        React to bumper triggers by beginning a retrace.
+
+        Args:
+            msg (Bump): bumper state message
+        """
         if self.goal_handle is None:
             return
 
@@ -195,16 +207,14 @@ class WaypointActionServer(Node):
                 self.finish("abort", missed_start=0)
                 return
             self.curr_retrace_point = self.num_retrace_points
-            self.estop = True
+            self.estop = True  # run_loop will reverse through previous waypoints
 
     def process_odom(self, msg):
         """
-        Callback function for /odom subscription.
-
-        Updates the robot's current position and orientation based on Odometry data.
+        Update the server's map-frame pose from odom messages.
 
         Args:
-            msg (Odometry): The Odometry message containing pose and orientation.
+            msg (Odometry): odom message containing pose/orientation
         """
         map_pose = self.odom_to_map(msg)
         if map_pose:
@@ -217,6 +227,15 @@ class WaypointActionServer(Node):
             ]
 
     def odom_to_map(self, odom_msg):
+        """
+        Transform an odom-frame pose into the map frame.
+
+        Args:
+            odom_msg (Odometry): message with pose in odom frame
+
+        Returns:
+            Pose: pose transformed into map frame or None if transform fails
+        """
         pose_odom = PoseStamped()
         pose_odom.header = odom_msg.header
         pose_odom.pose = odom_msg.pose.pose
@@ -239,11 +258,12 @@ class WaypointActionServer(Node):
         return pose_map
 
     def send_drive_command(self, linear, angular):
-        """Drive with the specified linear and angular velocity.
+        """
+        Send a velocity command to the robot.
 
         Args:
-            linear (Float): the linear velocity in m/s
-            angular (Float): the angular velocity in radians/s
+            linear (float): linear velocity in m/s
+            angular (float): angular velocity in rad/s
         """
         msg = Twist()
         msg.linear.x = float(linear)
@@ -251,11 +271,27 @@ class WaypointActionServer(Node):
         self.vel_pub.publish(msg)
 
     def angle_to_pose(self, pose: Pose):
+        """
+        Compute the heading from the robot to the pose.
+
+        Args:
+            pose (Pose): target pose to aim at
+
+        Returns:
+            float: angle toward the pose in radians
+        """
         x_distance = pose.position.x - self.position[0]
         y_distance = pose.position.y - self.position[1]
         return math.atan2(y_distance, x_distance)
 
     def finish(self, resolution, missed_start=None):
+        """
+        Finish the current action goal.
+
+        Args:
+            resolution (str): either success, abort, or cancel
+            missed_start (int): first waypoint index to mark missed
+        """
         if self.goal_handle is None:
             return
 
@@ -283,12 +319,44 @@ class WaypointActionServer(Node):
         self.goal_handle = None
 
     def distance_to_pose(self, pose: Pose):
+        """
+        Compute Euclidean distance to a pose.
+
+        Args:
+            pose (Pose): pose to measure to
+
+        Returns:
+            float: distance in meters
+        """
         x_distance = pose.position.x - self.position[0]
         y_distance = pose.position.y - self.position[1]
         return math.sqrt((x_distance**2) + (y_distance**2))
 
+    def publish_target_marker(self, pose: Pose):
+        """
+        Publish a visualization marker at the target waypoint.
+
+        Args:
+            pose (Pose): waypoint pose to visualize
+        """
+        m = Marker()
+        m.header.frame_id = "map"
+        m.header.stamp = self.get_clock().now().to_msg()
+        m.ns, m.id = "debug", 0
+        m.type, m.action = Marker.SPHERE, Marker.ADD
+        m.pose = pose
+        m.scale.x = m.scale.y = m.scale.z = 0.2
+        m.color.r, m.color.a = 1.0, 1.0
+        self.marker_pub.publish(m)
+
     @property
     def target_pose(self) -> Pose:
+        """
+        Current target pose from the active goal.
+
+        Returns:
+            Pose: pose at self.pose_number or None if no goal
+        """
         if self.goal_handle:
             return self.goal_handle.request.poses[self.pose_number].pose
 
@@ -296,29 +364,22 @@ class WaypointActionServer(Node):
 
     @property
     def num_poses(self) -> int:
+        """
+        Count of poses in the active goal.
+
+        Returns:
+            int: number of poses, or -1 if no goal
+        """
         if self.goal_handle:
             return len(self.goal_handle.request.poses)
 
         return -1
 
 
-def quaternion_to_yaw(q):
-    """
-    Converts a quaternion into a yaw (z rotation).
-
-    Args:
-        q (geometry_msgs.msg.Quaternion): Orientation as a quaternion.
-
-    Returns:
-        float: yaw in radians.
-    """
-    return math.atan2(2.0 * (q.w * q.z), 1.0 - 2.0 * (q.z * q.z))
-
-
 def main(args=None):
     """
-    Initialize rclpy and Node, then run with a MultiThreadedExecutor
-    so action callbacks and /odom callbacks can run concurrently.
+    Initialize rclpy and Node, then run with a with multi threaded
+    executor so action callbacks and odom callbacks can run correctly.
     """
     rclpy.init(args=args)
 

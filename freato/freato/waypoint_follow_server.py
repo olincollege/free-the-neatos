@@ -74,7 +74,7 @@ class WaypointActionServer(Node):
 
         # Estop
         self.estop = False
-        self.num_retrace_points = 8
+        self.num_retrace_points = 4
         self.curr_retrace_point = self.num_retrace_points
 
     def run_loop(self):
@@ -112,7 +112,9 @@ class WaypointActionServer(Node):
                     if self.pose_number == -1 or self.curr_retrace_point == 0:
                         self.estop = False
                         self.curr_retrace_point = self.num_retrace_points
-                        self.finish("abort")
+                        # Report remaining waypoints starting from the next forward
+                        # target (pose_number was decremented above).
+                        self.finish("abort", missed_start=self.pose_number + 1)
                     else:
                         print(f"Starting retrace waypoint {self.curr_retrace_point}")
                 else:
@@ -168,6 +170,8 @@ class WaypointActionServer(Node):
             return result
 
         self.goal_handle = goal_handle
+        self.estop = False
+        self.curr_retrace_point = self.num_retrace_points
 
         self.done_future = concurrent.futures.Future()
         result = self.done_future.result()
@@ -178,17 +182,20 @@ class WaypointActionServer(Node):
         if self.goal_handle is None:
             return
 
-        if not self.estop:
-            if (
-                msg.left_front == 1
-                or msg.left_side == 1
-                or msg.right_front == 1
-                or msg.right_side == 1
-            ):
-                self.pose_number -= 1
-                if self.pose_number < 0:
-                    self.finish("abort")
-                self.estop = True
+        if (
+            msg.left_front == 1
+            or msg.left_side == 1
+            or msg.right_front == 1
+            or msg.right_side == 1
+        ):
+            # Begin a short retrace before aborting so the caller can later skip ahead.
+            self.send_drive_command(0.0, 0.0)
+            self.pose_number -= 1
+            if self.pose_number < 0:
+                self.finish("abort", missed_start=0)
+                return
+            self.curr_retrace_point = self.num_retrace_points
+            self.estop = True
 
     def process_odom(self, msg):
         """
@@ -248,11 +255,12 @@ class WaypointActionServer(Node):
         y_distance = pose.position.y - self.position[1]
         return math.atan2(y_distance, x_distance)
 
-    def finish(self, resolution):
+    def finish(self, resolution, missed_start=None):
         if self.goal_handle is None:
             return
 
         self.send_drive_command(0.0, 0.0)
+        total_poses = self.num_poses
         if resolution == "success":
             self.goal_handle.succeed()
         elif resolution == "abort":
@@ -260,15 +268,19 @@ class WaypointActionServer(Node):
         elif resolution == "cancel":
             self.goal_handle.canceled()
 
-        self.goal_handle = None
         if self.done_future and not self.done_future.done():
             result = FollowWaypoints.Result()
-            if self.pose_number < self.num_poses:
-                result.missed_waypoints = list(range(self.pose_number, self.num_poses))
-            else:
+            start = missed_start if missed_start is not None else self.pose_number
+            if resolution == "success":
                 result.missed_waypoints = []
+            else:
+                start_idx = max(min(start, total_poses - 1), 0)
+                end_idx = max(total_poses, 0)
+                result.missed_waypoints = list(range(start_idx, end_idx))
             self.pose_number = 0
             self.done_future.set_result(result)
+
+        self.goal_handle = None
 
     def distance_to_pose(self, pose: Pose):
         x_distance = pose.position.x - self.position[0]

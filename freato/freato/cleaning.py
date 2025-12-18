@@ -25,13 +25,15 @@ class Cleaning(Node):
 
         # Parameters
         self.robot_diameter = 0.4
-        self.cleaning_clearance = 0.1
-        self.overlap = 0.05
+        self.cleaning_clearance = 0.3
+        self.overlap = 0.2
+        self.bump_waypoint_skip = 8
         self.position = []
 
         # State: get_to_cell, cleaning
         self.state = "get_to_cell"
         self.cell_number = 0
+        self.waypoint_num = -1
         self.shutdown = False
         self.calling_waypoint_server = False
 
@@ -53,7 +55,7 @@ class Cleaning(Node):
         self.map_y_origin = self.map.info.origin.position.y
 
         self.a_star_inflated_map = inflate_obstacles(
-            self.map_grid, self.robot_diameter, self.map_resolution
+            self.map_grid, self.robot_diameter + 0.1, self.map_resolution
         )
         self.cleaning_inflated_map = inflate_obstacles(
             self.map_grid, self.cleaning_clearance, self.map_resolution
@@ -81,9 +83,20 @@ class Cleaning(Node):
                 print("Finished cleaning")
 
             start_point = self.coords_to_indices(self.position[0], self.position[1])
+            cell = self.cleaning_path[self.cell_number]
 
-            print(self.cleaning_path)
-            first_cell_point = self.cleaning_path[self.cell_number][0]
+            if self.waypoint_num == -1:
+                # print(self.cleaning_path)
+                if cell:
+                    first_cell_point = cell[0]
+                else:
+                    self.cell_number += 1
+                    return
+            # Need to get back on track
+            else:
+                first_cell_point = cell[self.waypoint_num]
+                print(f"Running A* to get back on track")
+
             end_point = self.coords_to_indices(first_cell_point[0], first_cell_point[1])
             map_coords_to_start = a_star(
                 self.a_star_inflated_map, start_point, end_point
@@ -101,7 +114,13 @@ class Cleaning(Node):
             print(f"Following A* to cell {self.cell_number}")
 
         elif self.state == "cleaning":
+
             cleaning_path = self.cleaning_path[self.cell_number]
+
+            if self.waypoint_num > 0:
+                cleaning_path = cleaning_path[self.waypoint_num :]
+                print(f"Resuming cleaning from waypoint {self.waypoint_num}")
+
             cleaning_poses = self.points_to_pose_stamped(cleaning_path)
             self.publish_path(cleaning_poses)
             self.calling_waypoint_server = True
@@ -109,11 +128,11 @@ class Cleaning(Node):
             print(f"Cleaning {self.cell_number}")
 
     def get_cleaning_path(self):
-        inflated_map = inflate_obstacles(
-            self.map_grid, self.robot_diameter, self.map_resolution
-        )
         path = b_decomp(
-            inflated_map, self.map_resolution, self.robot_diameter, self.overlap
+            self.cleaning_inflated_map,
+            self.map_resolution,
+            self.robot_diameter,
+            self.overlap,
         )
         non_empty_paths = []
         # map_width_m = self.map_grid.shape[1] * self.map_resolution
@@ -194,9 +213,6 @@ class Cleaning(Node):
         goal = FollowWaypoints.Goal()
         goal.poses = poses
 
-        self.action_is_complete = False
-        self.get_new_frontier = False
-
         send_future = self.waypoints_client.send_goal_async(goal)
         send_future.add_done_callback(self._on_goal_response)
 
@@ -211,11 +227,23 @@ class Cleaning(Node):
 
     def _on_waypoints_done(self, future):
         result = future.result().result
-        self.get_logger().info(
-            f"Done. Missed waypoints: {list(result.missed_waypoints)}"
-        )
+        missed_waypoints = list(result.missed_waypoints)
+        self.get_logger().info(f"Done. Missed waypoints: {missed_waypoints}")
 
-        self.next_state()
+        print(f"Missed waypoints: {missed_waypoints}")
+
+        if missed_waypoints:
+
+            self.waypoint_num += missed_waypoints[0] + self.bump_waypoint_skip
+            if self.waypoint_num < len(self.cleaning_path[self.cell_number]):
+                self.state = "get_to_cell"
+                print(f"Bump sensor triggered, going to waypoint: {self.waypoint_num}")
+            else:
+                self.waypoint_num = -1
+                self.next_state()
+        else:
+            self.next_state()
+
         self.calling_waypoint_server = False
 
     def coords_to_indices(self, x, y):
@@ -249,6 +277,7 @@ class Cleaning(Node):
         elif self.state == "cleaning":
             self.state = "get_to_cell"
             self.cell_number += 1
+            self.waypoint_num = -1
         else:
             print(f"State is abnormal: {self.state}")
 

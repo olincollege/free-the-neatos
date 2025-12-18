@@ -20,6 +20,17 @@ from freato.b_decomp import b_decomp
 
 class Cleaning(Node):
     def __init__(self):
+        """
+        Initialize the cleaning node.
+
+        Publishers:
+            cmd_vel (geometry_msgs/Twist): direct velocity commands
+            /target (visualization_msgs/Marker): debug target marker
+            /trajectory (nav_msgs/Path): visualization of planned paths
+
+        Subscribers:
+            /odom (nav_msgs/Odometry): robot pose updates
+        """
         super().__init__("cleaning")
 
         # Parameters

@@ -1,3 +1,7 @@
+"""
+Functions to run plan Boustrophedon Decomposition on path on Occupancy Map
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 

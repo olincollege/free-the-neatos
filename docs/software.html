@@ -119,7 +119,7 @@
             <h2>Architecture</h2>
             
             <p>
-                We've organized our software into distinct functional modes to clearly separate the different behaviors our Neato robots need. This modular approach makes it easier to understand, maintain, and extend the system. The software is split into three main sections: Mapping Mode (for exploring and building maps of new environments), Cleaning Mode (for efficiently covering and cleaning known spaces), and Shared Algorithms (common utilities used by both modes).
+                We've organized our software into distinct functional modes to clearly separate the different behaviors our Neato robots need. This modular approach makes it easier to understand, maintain, and extend the system. The software is split into four main sections: Mapping Mode (for exploring and building maps of new environments), Cleaning Mode (for efficiently covering and cleaning known spaces), Localization (for pose estimation), and Shared Algorithms (common utilities used by both modes).
             </p>
             
             <h3>Mapping Mode</h3>
@@ -141,6 +141,10 @@
                 <li>Call A* to get from cell to cell</li>
                 <li>Call action server to execute</li>
                 <li>Coverage path planning with Boustrophedon cellular decomposition (Functions)</li>
+            </ul>
+
+            <h3>Localization</h3>
+            <ul>
                 <li>Kalman Filter for localization (Node)</li>
             </ul>
             

@@ -3,7 +3,7 @@
   <head>
     <meta name="author" content="Stephan Risi" />
     <meta charset="utf-8" />
-    
+
     <!-- Favicon -->
     <link rel="icon" type="image/jpeg" href="images/home.jpg" />
     <link
@@ -39,30 +39,34 @@
       $(document).ready(function () {
         function setupMobileMenu() {
           // Toggle mobile menu - use event delegation
-          $(document).off("click", ".mobile-menu-toggle").on("click", ".mobile-menu-toggle", function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            var isActive = $(this).hasClass("active");
-            $(this).toggleClass("active");
-            $(".sidebar").toggleClass("active");
-            $(".mobile-overlay").toggleClass("active");
-            // Prevent body scroll when menu is open
-            if (!isActive) {
-              $("body").addClass("menu-open");
-            } else {
-              $("body").removeClass("menu-open");
-            }
-          });
+          $(document)
+            .off("click", ".mobile-menu-toggle")
+            .on("click", ".mobile-menu-toggle", function (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              var isActive = $(this).hasClass("active");
+              $(this).toggleClass("active");
+              $(".sidebar").toggleClass("active");
+              $(".mobile-overlay").toggleClass("active");
+              // Prevent body scroll when menu is open
+              if (!isActive) {
+                $("body").addClass("menu-open");
+              } else {
+                $("body").removeClass("menu-open");
+              }
+            });
 
           // Close menu when overlay is clicked
-          $(document).off("click", ".mobile-overlay").on("click", ".mobile-overlay", function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            $(".mobile-menu-toggle").removeClass("active");
-            $(".sidebar").removeClass("active");
-            $(this).removeClass("active");
-            $("body").removeClass("menu-open");
-          });
+          $(document)
+            .off("click", ".mobile-overlay")
+            .on("click", ".mobile-overlay", function (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              $(".mobile-menu-toggle").removeClass("active");
+              $(".sidebar").removeClass("active");
+              $(this).removeClass("active");
+              $("body").removeClass("menu-open");
+            });
         }
 
         // Set up mobile menu immediately and after delays to ensure header is loaded
@@ -139,15 +143,22 @@
           cells, then plans a zig zag (lawn mower) path to cover the area of
           each cell. To get from the end of the previous cell to the start of
           the next cell, we used A*. More details on these algorithms and the
-          path following is available on the Path Planning and Execution page.
+          path following is available on the
+          <a href="software-mapping.html">Mapping</a> and
+          <a href="software-both.html">Path Planning and Execution</a> pages.
         </p>
         <p>
           Additionally, for localization during cleaning, we developed a custom
           implementation of an extended kalman filter. More details are
-          available on the Kalman filter page.
+          available on the
+          <a href="software-kalman.html">Kalman Filter</a> page.
         </p>
         <p>
-          <img src="images/cleaning.gif" alt="Mapping Algorithm" class="content-img" />
+          <img
+            src="images/cleaning.gif"
+            alt="Mapping Algorithm"
+            class="content-img"
+          />
         </p>
         <h2>Architecture</h2>
         <p>
@@ -158,7 +169,11 @@
           server to execute the path.
         </p>
         <p>
-          <img src="images/image3.jpg" alt="Cleaning Architecture" class="content-img" />
+          <img
+            src="images/image3.jpg"
+            alt="Cleaning Architecture"
+            class="content-img"
+          />
         </p>
 
         <h2>Algorithm</h2>
@@ -194,7 +209,73 @@
           server is unsuccessful at following the path, it will either retry by
           planning a new path or it will resume cleaning the cell a few
           waypoints later. This maximizes coverage and can handle minor map
-          changes or localization errors.
+          changes or localization errors. Here is a demo of that.
+        </p>
+        <p>
+          <img
+            src="images/bump_and_continue.gif"
+            alt="Mapping Algorithm"
+            class="content-img"
+          />
+        </p>
+
+        <h2>Boustrophedon Cellular Decomposition</h2>
+        <p>
+          To generate an efficient coverage path during cleaning, we use a
+          slightly modified Boustrophedon Cellular Decomposition (BCD). BCD is a
+          classic coverage path planning algorithm designed to systematically
+          cover an entire area while minimizing redundant motion. At a high
+          level, the algorithm decomposes the free space in a map into a set of
+          connected cells based on obstacle boundaries. Each cell represents a
+          region that can be covered with simple, back-and-forth motion, similar
+          to a lawnmower pattern. By breaking the problem into these smaller
+          regions, BCD makes full-area coverage tractable even in environments
+          with complex obstacle layouts.
+        </p>
+        <p>
+          <img
+            src="images/image7.png"
+            alt="BCD Coverage Paths"
+            class="content-img content-img--sm"
+          />
+        </p>
+        <p>
+          Different color path lines represent different cells created by our
+          BCD algorithm.
+        </p>
+        <p>
+          <img
+            src="images/image8.png"
+            alt="BCD Cells"
+            class="content-img content-img--sm"
+          />
+        </p>
+        <p>
+          Once the cells are generated, the robot follows a zig-zag coverage
+          path within each cell to ensure that all reachable space is visited.
+          When transitioning between cells, coverage paths alone are
+          insufficient, so we use a general-purpose planner to move the robot
+          from the end of one cell's coverage path to the start of the next.
+          This combination allows the system to maintain both efficient local
+          coverage and reliable global navigation, even when cells are separated
+          by narrow passages or irregular geometry.
+        </p>
+        <p>
+          Our BCD algorithm is slightly modified to allow safer movement between
+          travel lines. Rather than driving straight from the end of one line to
+          the start of the next, which would often cause a collision with an
+          obstacle, the neato will travel along the line it just cleaned until
+          it reaches a safe spot to move over to the start of the next line.
+          Experimentally this has completely removed all chances of collision
+          during transition between cleaning lines.
+        </p>
+        <p>
+          Overall, BCD proved to be a reliable choice for our cleaning task. The
+          structure of the algorithm makes it easy to reason about coverage
+          while still working well with a grid-based map and a real robot. With
+          our small modification to how the robot transitions between cleaning
+          lines, the system is able to cover most of the mapped area safely and
+          consistently, without excessive re-planning or repeated passes.
         </p>
 
         <h2>Limitations and Future Work</h2>
@@ -218,7 +299,11 @@
           research on algorithms for an approach beyond that.
         </p>
         <p>
-          <img src="images/image2.png" alt="Cleaning Limitations" class="content-img content-img--sm" />
+          <img
+            src="images/image2.png"
+            alt="Cleaning Limitations"
+            class="content-img content-img--sm"
+          />
         </p>
       </div>
     </main>

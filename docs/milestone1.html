@@ -8,6 +8,9 @@
     <meta name="author" content="Stephan Risi">
     <meta charset="utf-8">
     <!--<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">-->
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/jpeg" href="images/home.jpg">
 
     <!-- Load JQuery and Bootstrap. They are javascript library that handle the layouting for us.-->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
@@ -25,6 +28,53 @@
     <link href="css/main.css" rel="stylesheet">
 
     <script>
+        // Mobile menu toggle functionality - use event delegation since header loads asynchronously
+        $(document).ready(function() {
+            function setupMobileMenu() {
+                // Toggle mobile menu - use event delegation
+                $(document).off('click', '.mobile-menu-toggle').on('click', '.mobile-menu-toggle', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    var isActive = $(this).hasClass('active');
+                    $(this).toggleClass('active');
+                    $('.sidebar').toggleClass('active');
+                    $('.mobile-overlay').toggleClass('active');
+                    // Prevent body scroll when menu is open
+                    if (!isActive) {
+                        $('body').addClass('menu-open');
+                    } else {
+                        $('body').removeClass('menu-open');
+                    }
+                });
+
+                // Close menu when overlay is clicked
+                $(document).off('click', '.mobile-overlay').on('click', '.mobile-overlay', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    $('.mobile-menu-toggle').removeClass('active');
+                    $('.sidebar').removeClass('active');
+                    $(this).removeClass('active');
+                    $('body').removeClass('menu-open');
+                });
+            }
+
+            // Set up mobile menu immediately and after delays to ensure header is loaded
+            setupMobileMenu();
+            setTimeout(setupMobileMenu, 100);
+            setTimeout(setupMobileMenu, 500);
+            setTimeout(setupMobileMenu, 1000);
+        });
+
+        // Close menu when a nav link is clicked (on mobile) - use event delegation
+        $(document).on('click', '.nav-link', function() {
+            if ($(window).width() <= 767) {
+                $('.mobile-menu-toggle').removeClass('active');
+                $('.sidebar').removeClass('active');
+                $('.mobile-overlay').removeClass('active');
+                $('body').removeClass('menu-open');
+            }
+        });
+
         // Set up active links after header loads
         $(document).ready(function() {
             function setupNavigation() {

@@ -9,6 +9,9 @@
     <meta name="author" content="Stephan Risi">
     <meta charset="utf-8">
     <!--<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">-->
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/jpeg" href="images/home.jpg">
 
     <!-- Load JQuery and Bootstrap. They are javascript library that handle the layouting for us.-->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
@@ -26,7 +29,54 @@
     <link href="css/main.css" rel="stylesheet">
 
     <script>
-        // Set up active links after header loads
+        // Mobile menu toggle functionality - use event delegation since header loads asynchronously
+        $(document).ready(function() {
+            function setupMobileMenu() {
+                // Toggle mobile menu - use event delegation
+                $(document).off('click', '.mobile-menu-toggle').on('click', '.mobile-menu-toggle', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    var isActive = $(this).hasClass('active');
+                    $(this).toggleClass('active');
+                    $('.sidebar').toggleClass('active');
+                    $('.mobile-overlay').toggleClass('active');
+                    // Prevent body scroll when menu is open
+                    if (!isActive) {
+                        $('body').addClass('menu-open');
+                    } else {
+                        $('body').removeClass('menu-open');
+                    }
+                });
+
+                // Close menu when overlay is clicked
+                $(document).off('click', '.mobile-overlay').on('click', '.mobile-overlay', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    $('.mobile-menu-toggle').removeClass('active');
+                    $('.sidebar').removeClass('active');
+                    $(this).removeClass('active');
+                    $('body').removeClass('menu-open');
+                });
+            }
+
+            // Set up mobile menu immediately and after delays to ensure header is loaded
+            setupMobileMenu();
+            setTimeout(setupMobileMenu, 100);
+            setTimeout(setupMobileMenu, 500);
+            setTimeout(setupMobileMenu, 1000);
+        });
+
+        // Close menu when a nav link is clicked (on mobile) - use event delegation
+        $(document).on('click', '.nav-link', function() {
+            if ($(window).width() <= 767) {
+                $('.mobile-menu-toggle').removeClass('active');
+                $('.sidebar').removeClass('active');
+                $('.mobile-overlay').removeClass('active');
+                $('body').removeClass('menu-open');
+            }
+        });
+
+        // Set up active links and add decorative image after header loads
         $(document).ready(function() {
             function setupNavigation() {
                 var currentPage = window.location.pathname.split('/').pop() || 'index.html';
@@ -47,6 +97,11 @@
                         $(this).addClass('active');
                     }
                 });
+
+                // Add decorative robot image to sidebar
+                if ($('.sidebar-decorative-image').length === 0) {
+                    $('.sidebar-nav').after('<div class="sidebar-decorative-image"><img src="images/home.jpg" alt="Robot doodle" /></div>');
+                }
             }
 
             // Try to set up navigation immediately, and also after a short delay to ensure header is loaded
@@ -66,52 +121,116 @@
     <!--Main content area-->
     <main class="main-content">
         <div class="content-wrapper">
-            <div class="home-layout">
-                <div class="home-image-column">
-                    <img src="images/home.jpg" alt="Free the Neatos" />
-                </div>
-                <div class="home-content-column">
-                    <!--h1 stands for heading 1, the largest kind of header. You can add smaller headings with h2, h3 etc.-->
-                    <!--Note: we need to both open (<h1>) and close (</h1>) all of the tags that we use.-->
-                    <h1>Free the Neatos</h1>
-                    
-                    <p style="font-size: 18px; color: #586069; margin-bottom: 32px; font-style: italic;">
-                        Giving our robot friends the life they always dreamed of…
-                    </p>
-
-                    <!-- Project Overview Section -->
-                    <section class="content-section">
-                        <h2>Project Overview</h2>
-                        <p>
-                            At Olin College, the Neato vacuum robots have been faithful learning companions, teaching students about robotics, programming, and autonomous systems. However, while they've been excellent educational tools, these hardworking robots haven't actually cleaned anything in a long time—they've been stuck in the classroom, their cleaning dreams put on hold.
-                        </p>
-                        <p>
-                            This project seeks to change that. We're giving the Neatos a chance to return to their true calling by implementing a complete autonomous cleaning system. Through full mapping algorithms and intelligent coverage path planning, we're programming these robots to finally do what they were built to do: clean! It's time to free the Neatos from their educational limbo and let them roam the floors once more, fulfilling their vacuum destiny.
-                        </p>
-                    </section>
-
-                    <!-- Goals Section -->
-                    <section class="content-section">
-                        <h2>Goals</h2>
-                        <p>
-                            [Project goals content will be added here. This section should outline the main objectives and targets of the project.]
-                        </p>
-                        <ul>
-                            <li>[Goal 1 - to be added]</li>
-                            <li>[Goal 2 - to be added]</li>
-                            <li>[Goal 3 - to be added]</li>
-                        </ul>
-                    </section>
-
-                    <!-- Ethics Statement Section -->
-                    <section id="ethics" class="content-section">
-                        <h2>Ethics Statement</h2>
-                        <p>
-                            [Ethics statement content will be added here. This section should address the ethical considerations and implications of the project.]
-                        </p>
-                    </section>
-                </div>
+            <!--h1 stands for heading 1, the largest kind of header. You can add smaller headings with h2, h3 etc.-->
+            <!--Note: we need to both open (<h1>) and close (</h1>) all of the tags that we use.-->
+            <h1>Free the Neatos</h1>
+            
+            <p style="font-size: 18px; color: #586069; margin-bottom: 24px; font-style: italic; border-left: 3px solid #0366d6; padding-left: 16px;">
+                Giving our robot friends the life they always dreamed of…
+            </p>
+            
+            <div style="background-color: #f6f8fa; border: 1px solid #e1e4e8; border-radius: 0; padding: 16px; margin-bottom: 32px;">
+                <p style="font-size: 15px; color: #586069; margin-bottom: 8px; margin-top: 0;">
+                    <strong>Course:</strong> Fall 2025 Computational Robotics Final Project at Olin College
+                </p>
+                <p style="font-size: 15px; color: #586069; margin-bottom: 0; margin-top: 0;">
+                    <strong>Contributors:</strong> Andrew Kurtz, Jojo Liu, Cian Linehan, Franklin Nobel, David Barsoum
+                </p>
             </div>
+
+            <!-- Project Overview Section -->
+            <section class="content-section">
+                <h2>Project Overview</h2>
+                <p>
+                    At Olin College, the Neato vacuum robots have been faithful learning companions, teaching students about robotics, programming, and autonomous systems. However, while they've been excellent educational tools, these hardworking robots haven't actually cleaned anything in a long time—they've been stuck in the classroom, their cleaning dreams put on hold.
+                </p>
+                <p>
+                    This project seeks to change that. We're giving the Neatos a chance to return to their true calling by implementing a complete autonomous cleaning system. Through full mapping algorithms and intelligent coverage path planning, we're programming these robots to finally do what they were built to do: clean! It's time to free the Neatos from their educational limbo and let them roam the floors once more, fulfilling their vacuum destiny.
+                </p>
+            </section>
+
+            <!-- Goals Section -->
+            <section class="content-section">
+                <h2>Goals</h2>
+                
+                <div style="margin-top: 24px;">
+                    <h3 style="margin-bottom: 8px; color: #24292e;">1. All basic robot vacuum functionality</h3>
+                    <p style="margin-bottom: 24px; color: #586069;">Functioning prototype of mapping + cleaning in sim</p>
+                </div>
+                
+                <div>
+                    <h3 style="margin-bottom: 8px; color: #24292e;">2. Learn about mobile robot algorithms</h3>
+                    <p style="margin-bottom: 24px; color: #586069;">Learn about and implement different mobile robotics algorithms</p>
+                </div>
+                
+                <div>
+                    <h3 style="margin-bottom: 8px; color: #24292e;">3. ROS2 Experience</h3>
+                    <p style="margin-bottom: 24px; color: #586069;">Practice implementing larger ROS system and using more ROS features</p>
+                </div>
+                
+                <div>
+                    <h3 style="margin-bottom: 8px; color: #24292e;">4. Help Employ Us</h3>
+                    <p style="margin-bottom: 0; color: #586069;">Project we are proud of and can show to potential employers</p>
+                </div>
+            </section>
+
+            <!-- Ethics Statement Section -->
+            <section id="ethics" class="content-section">
+                <h2>Ethics Statement</h2>
+                
+                <div style="background-color: #f6f8fa; border: 1px solid #e1e4e8; border-radius: 0; padding: 24px; margin-top: 24px;">
+                    <h3 style="margin-top: 0; margin-bottom: 16px;">Model Card</h3>
+                    <p style="margin-bottom: 24px; color: #586069;">By following this Model Card Framework, we created a card to make clear the intentions and implications of our robotic system:</p>
+                    
+                    <div style="margin-bottom: 24px;">
+                        <h4 style="margin-bottom: 8px; color: #24292e; font-size: 16px;">Algorithm Details:</h4>
+                        <p style="margin-bottom: 0; color: #586069; line-height: 1.6;">
+                            <strong>Team:</strong> Andrew Kurtz, Jojo Liu, Cian Linehan, Franklin Nobel, David Barsoum<br>
+                            <strong>Date:</strong> Fall 2025<br>
+                            <strong>Description:</strong> Autonomous vacuum robot system using SLAM, coverage path planning, and sensor fusion<br>
+                            <strong>Contact:</strong> For questions or concerns, message any collaborators on our <a href="https://github.com/olincollege/free-the-neatos" target="_blank">GitHub</a>
+                        </p>
+                    </div>
+                    
+                    <div style="margin-bottom: 24px;">
+                        <h4 style="margin-bottom: 8px; color: #24292e; font-size: 16px;">Intended Use:</h4>
+                        <p style="margin-bottom: 12px; color: #586069; line-height: 1.6;">
+                            Our primary intended use is educational and experimental. While our goal is to create a fully functional autonomous cleaning system, our true motivation is to deepen our understanding of mobile robotics, SLAM algorithms, and path planning techniques through hands-on implementation.
+                        </p>
+                        <p style="margin-bottom: 0; color: #586069; line-height: 1.6;">
+                            Our primary intended users include ourselves as creators, Olin College students and faculty who may use this as a learning resource, and anyone interested in understanding autonomous vacuum robot systems who has access to similar hardware (Neato robots or compatible platforms).
+                        </p>
+                    </div>
+                    
+                    <div style="margin-bottom: 24px;">
+                        <h4 style="margin-bottom: 8px; color: #24292e; font-size: 16px;">Factors:</h4>
+                        <p style="margin-bottom: 0; color: #586069; line-height: 1.6;">
+                            The primary factors that can affect performance are environmental. Our system requires an indoor space with relatively flat surfaces, adequate lighting for visual sensors, and a reasonably structured environment. The robot's performance may be impacted by highly cluttered spaces, very dark areas, or environments with highly reflective surfaces that can confuse LIDAR sensors.
+                        </p>
+                    </div>
+                    
+                    <div style="margin-bottom: 24px;">
+                        <h4 style="margin-bottom: 8px; color: #24292e; font-size: 16px;">Metrics:</h4>
+                        <p style="margin-bottom: 0; color: #586069; line-height: 1.6;">
+                            Due to the educational scope and development stage of our project, we have limited quantitative metrics for cleaning efficiency and coverage. Our primary success metrics are functional: the ability to successfully map an environment, navigate autonomously, and execute a coverage path. We acknowledge that comprehensive performance evaluation would require extensive real-world testing across diverse environments.
+                        </p>
+                    </div>
+                    
+                    <div style="margin-bottom: 24px;">
+                        <h4 style="margin-bottom: 8px; color: #24292e; font-size: 16px;">Ethical Considerations:</h4>
+                        <p style="margin-bottom: 0; color: #586069; line-height: 1.6;">
+                            As an educational project focused on learning and skill development, our primary ethical considerations center on safety and responsible development. We ensure the robot operates in controlled environments with human supervision, and we prioritize safety protocols to prevent damage to property or harm to people or pets. We recognize that autonomous systems should be developed with transparency about their capabilities and limitations.
+                        </p>
+                    </div>
+                    
+                    <div style="margin-bottom: 0;">
+                        <h4 style="margin-bottom: 8px; color: #24292e; font-size: 16px;">Caveats and Recommendations:</h4>
+                        <p style="margin-bottom: 0; color: #586069; line-height: 1.6;">
+                            Our biggest known limitation is that the system is designed for simulation and controlled testing environments. The transition to real-world deployment would require additional safety features, error handling, and robustness testing. We recommend that anyone using or building upon this system thoroughly test in safe, controlled environments before considering any practical deployment. The system should not be used in environments with pets, small children, or valuable objects without careful supervision and additional safety measures.
+                        </p>
+                    </div>
+                </div>
+            </section>
         </div>
     </main>
 </body>

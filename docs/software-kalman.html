@@ -39,30 +39,34 @@
       $(document).ready(function () {
         function setupMobileMenu() {
           // Toggle mobile menu - use event delegation
-          $(document).off("click", ".mobile-menu-toggle").on("click", ".mobile-menu-toggle", function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            var isActive = $(this).hasClass("active");
-            $(this).toggleClass("active");
-            $(".sidebar").toggleClass("active");
-            $(".mobile-overlay").toggleClass("active");
-            // Prevent body scroll when menu is open
-            if (!isActive) {
-              $("body").addClass("menu-open");
-            } else {
-              $("body").removeClass("menu-open");
-            }
-          });
+          $(document)
+            .off("click", ".mobile-menu-toggle")
+            .on("click", ".mobile-menu-toggle", function (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              var isActive = $(this).hasClass("active");
+              $(this).toggleClass("active");
+              $(".sidebar").toggleClass("active");
+              $(".mobile-overlay").toggleClass("active");
+              // Prevent body scroll when menu is open
+              if (!isActive) {
+                $("body").addClass("menu-open");
+              } else {
+                $("body").removeClass("menu-open");
+              }
+            });
 
           // Close menu when overlay is clicked
-          $(document).off("click", ".mobile-overlay").on("click", ".mobile-overlay", function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            $(".mobile-menu-toggle").removeClass("active");
-            $(".sidebar").removeClass("active");
-            $(this).removeClass("active");
-            $("body").removeClass("menu-open");
-          });
+          $(document)
+            .off("click", ".mobile-overlay")
+            .on("click", ".mobile-overlay", function (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              $(".mobile-menu-toggle").removeClass("active");
+              $(".sidebar").removeClass("active");
+              $(this).removeClass("active");
+              $("body").removeClass("menu-open");
+            });
         }
 
         // Set up mobile menu immediately and after delays to ensure header is loaded
@@ -132,9 +136,9 @@
       <div class="content-wrapper">
         <h1>Extended Kalman Filter</h1>
         <p>
-          Our localization system is built around an Extended Kalman Filter
-          (EKF) that fuses wheel odometry and 2D LiDAR data to estimate the
-          robot's pose in a known map. The EKF provides a probabilistic
+          For the localization during cleaning, we built an Extended Kalman
+          Filter (EKF) that fuses wheel odometry and 2D LiDAR data to estimate
+          the robot's pose in a known map. The EKF provides a probabilistic
           framework that accounts for sensor noise and model uncertainty (though
           no noise ended up being modeled in simulation due to time constraint)
           while continuously refining the robot's position and orientation in
@@ -178,9 +182,8 @@
         </p>
         <p>
           The EKF linearizes this model about the current estimate using
-          Jacobians with respect to both the state and control input.
-          Velocity-dependent process noise is incorporated to reflect increased
-          uncertainty during motion.
+          Jacobians with respect to both the state and control input. Process
+          noise is incorporated to reflect uncertainties during motion.
         </p>
         <p>
           This step produces a predicted state and covariance before measurement

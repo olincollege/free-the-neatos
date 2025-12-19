@@ -3,7 +3,7 @@
   <head>
     <meta name="author" content="Stephan Risi" />
     <meta charset="utf-8" />
-    
+
     <!-- Favicon -->
     <link rel="icon" type="image/jpeg" href="images/home.jpg" />
     <link
@@ -39,30 +39,34 @@
       $(document).ready(function () {
         function setupMobileMenu() {
           // Toggle mobile menu - use event delegation
-          $(document).off("click", ".mobile-menu-toggle").on("click", ".mobile-menu-toggle", function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            var isActive = $(this).hasClass("active");
-            $(this).toggleClass("active");
-            $(".sidebar").toggleClass("active");
-            $(".mobile-overlay").toggleClass("active");
-            // Prevent body scroll when menu is open
-            if (!isActive) {
-              $("body").addClass("menu-open");
-            } else {
-              $("body").removeClass("menu-open");
-            }
-          });
+          $(document)
+            .off("click", ".mobile-menu-toggle")
+            .on("click", ".mobile-menu-toggle", function (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              var isActive = $(this).hasClass("active");
+              $(this).toggleClass("active");
+              $(".sidebar").toggleClass("active");
+              $(".mobile-overlay").toggleClass("active");
+              // Prevent body scroll when menu is open
+              if (!isActive) {
+                $("body").addClass("menu-open");
+              } else {
+                $("body").removeClass("menu-open");
+              }
+            });
 
           // Close menu when overlay is clicked
-          $(document).off("click", ".mobile-overlay").on("click", ".mobile-overlay", function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            $(".mobile-menu-toggle").removeClass("active");
-            $(".sidebar").removeClass("active");
-            $(this).removeClass("active");
-            $("body").removeClass("menu-open");
-          });
+          $(document)
+            .off("click", ".mobile-overlay")
+            .on("click", ".mobile-overlay", function (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              $(".mobile-menu-toggle").removeClass("active");
+              $(".sidebar").removeClass("active");
+              $(this).removeClass("active");
+              $("body").removeClass("menu-open");
+            });
         }
 
         // Set up mobile menu immediately and after delays to ensure header is loaded
@@ -141,7 +145,11 @@
           until the map is filled and can be saved.
         </p>
         <p>
-          <img src="images/mapping.gif" alt="Mapping Algorithm" class="content-img" />
+          <img
+            src="images/mapping.gif"
+            alt="Mapping Algorithm"
+            class="content-img"
+          />
         </p>
         <h2>Architecture</h2>
         <p>
@@ -156,10 +164,14 @@
           mapping node. It also handles unexpected obstacles in the path.
         </p>
 
-        <h2>Algorithm</h2>
         <p>
-          <img src="images/image6.jpg" alt="Mapping Algorithm" class="content-img" />
+          <img
+            src="images/image6.jpg"
+            alt="Mapping Algorithm"
+            class="content-img"
+          />
         </p>
+        <h2>Algorithm</h2>
         <p>The general algorithm used by the mapping node works as follows:</p>
         <ol>
           <li>Start with the initial 2D LIDAR map grid</li>

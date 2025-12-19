@@ -6,12 +6,19 @@ Implementing robot vacuum software in ROS 2 for Neato vacuum robots.
 
 This project implements a complete autonomous cleaning system for Neato vacuum robots using ROS 2. The system enables the robots to autonomously map their environment and perform intelligent coverage path planning for cleaning operations.
 
+See our [website](https://olincollege.github.io/free-the-neatos/index.html) for the full project writeup
+
+<div align="center">
+  <img src="docs/images/mapping.gif" alt="Mapping mode demo" width="350" />
+  <img src="docs/images/cleaning.gif" alt="Cleaning mode demo" width="350" />
+</div>
+
 ## Features
 
 - **SLAM (Simultaneous Localization and Mapping)**: Real-time mapping of unknown environments using the ROS slam_toolbox
 - **Exploration Path Planning**: Autonomous exploration to build complete maps using frontier-based exploration
 - **Coverage Path Planning**: Intelligent cleaning path planning using Boustrophedon Decomposition
-- **A* Path Planning**: Obstacle-avoiding pathfinding between waypoints
+- **A\* Path Planning**: Obstacle-avoiding pathfinding between waypoints
 - **Extended Kalman Filter (EKF)**: Improved odometry estimation for better localization
 - **Waypoint Following**: Low-level control system for following planned paths
 
@@ -31,6 +38,7 @@ This project implements a complete autonomous cleaning system for Neato vacuum r
 - `nav2_msgs` - Navigation2 message types
 - `slam_toolbox` - SLAM implementation
 - `launch` / `launch_ros` - ROS 2 launch system
+- `neato_packages` - Custom Neato ROS interface. Install [here](https://github.com/comprobo25/neato_packages).
 
 ## Installation
 
@@ -70,20 +78,11 @@ To run the robot in cleaning mode (requires a pre-existing map):
 ros2 launch freato freato_cleaning.launch.py
 ```
 
-### Full System
-
-To launch the complete system:
-
-```bash
-ros2 launch freato freato.launch.py
-```
-
-
 ## Project Structure
 
 ```
 free-the-neatos/
-├── freato/                    # Main ROS 2 package
+├── freato/                   # Main ROS 2 package
 │   ├── freato/               # Python package
 │   │   ├── a_star.py         # A* path planning implementation
 │   │   ├── angle_helpers.py  # Angle utility functions
@@ -99,26 +98,28 @@ free-the-neatos/
 │   ├── maps/                 # Pre-built maps
 │   ├── worlds/               # Simulation world files
 │   └── test/                 # Unit tests
-├── docs/                     # Documentation and website
-└── README.md                 # This file
+├── docs/                     # Website
 ```
 
-## Components
+## Architecture
+
+  <img src="docs/images/image4.jpg" alt="Mapping mode demo" width="650" />
 
 ### Mapping Components
 - **SLAM**: Uses ROS slam_toolbox for simultaneous localization and mapping
 - **Exploration Path Planning**: Frontier-based exploration algorithm
-- **EKF**: Extended Kalman Filter for improved odometry
 
 ### Cleaning Components
 - **Coverage Path Planning**: Boustrophedon Decomposition for efficient coverage
-- **A* Path Planning**: Obstacle-avoiding pathfinding
+- **EKF**: Custom extended kalman filter using iterative closest point 
+
+### Components for Both Modes
 - **Waypoint Following**: Action server for executing planned paths
-- **Localization**: Particle filter or AMCL for map-based localization
+- **A\* Path Planning**: Obstacle-avoiding pathfinding
 
 ## Documentation
 
-Additional documentation is available in the `docs/` directory, including:
+See our [website](https://olincollege.github.io/free-the-neatos/index.html) for the full project write-up with:
 - Project overview and goals
 - Milestone documentation
 - Software architecture details

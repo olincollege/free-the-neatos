@@ -82,6 +82,7 @@ ros2 launch freato freato_cleaning.launch.py
 
 ```
 free-the-neatos/
+├── bag_files/                # ROS 2 bag recordings and notes
 ├── freato/                   # Main ROS 2 package
 │   ├── freato/               # Python package
 │   │   ├── a_star.py         # A* path planning implementation
@@ -116,6 +117,10 @@ free-the-neatos/
 ### Components for Both Modes
 - **Waypoint Following**: Action server for executing planned paths
 - **A\* Path Planning**: Obstacle-avoiding pathfinding
+
+## Bag Files
+
+Recorded ROS 2 bags used with demos live in `bag_files/`, with a short README explaining contents and usage.
 
 ## Documentation
 

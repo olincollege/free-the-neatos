@@ -1,83 +1,164 @@
 <!DOCTYPE html>
 <html lang="en">
-
-<head>
-    <meta name="author" content="Stephan Risi">
-    <meta charset="utf-8">
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
-    <script src="https://code.jquery.com/jquery-3.4.1.min.js" integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js" integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1" crossorigin="anonymous"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
+  <head>
+    <meta name="author" content="Stephan Risi" />
+    <meta charset="utf-8" />
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+      integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T"
+      crossorigin="anonymous"
+    />
+    <script
+      src="https://code.jquery.com/jquery-3.4.1.min.js"
+      integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo="
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"
+      integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"
+      integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM"
+      crossorigin="anonymous"
+    ></script>
     <title>Mapping - Free the Neatos</title>
-    <script> $(function(){$("#header").load("header.html");});</script>
-    <link href="css/main.css" rel="stylesheet">
     <script>
-        // Set up active links and add decorative image after header loads
-        $(document).ready(function() {
-            function setupNavigation() {
-                var currentPage = window.location.pathname.split('/').pop() || 'index.html';
-                var isMilestonePage = currentPage.includes('milestone');
-                var isSoftwarePage = currentPage.includes('software');
-                
-                $('.nav-link').each(function() {
-                    var linkHref = $(this).attr('href');
-                    if (!linkHref) return;
-                    
-                    var linkPage = linkHref.split('#')[0].split('/').pop();
-                    
-                    // Check if this link matches current page
-                    if (linkPage === currentPage || 
-                        (currentPage === '' && linkPage === 'index.html') ||
-                        (isMilestonePage && linkHref.includes('milestone') && currentPage === linkPage) ||
-                        (isSoftwarePage && linkHref.includes('software') && currentPage === linkPage)) {
-                        $(this).addClass('active');
-                    }
-                });
-                
-                // Add decorative robot image to sidebar
-                if ($('.sidebar-decorative-image').length === 0) {
-                    $('.sidebar-nav').after('<div class="sidebar-decorative-image"><img src="images/mapping.jpg" alt="Robot doodle" /></div>');
-                }
-            }
-
-            // Try to set up navigation immediately, and also after a short delay to ensure header is loaded
-            setTimeout(setupNavigation, 100);
-            setTimeout(setupNavigation, 500);
-        });
+      $(function () {
+        $("#header").load("header.html");
+      });
     </script>
-</head>
+    <link href="css/main.css" rel="stylesheet" />
+    <script>
+      // Set up active links and add decorative image after header loads
+      $(document).ready(function () {
+        function setupNavigation() {
+          var currentPage =
+            window.location.pathname.split("/").pop() || "index.html";
+          var isMilestonePage = currentPage.includes("milestone");
+          var isSoftwarePage = currentPage.includes("software");
 
-<body>
+          $(".nav-link").each(function () {
+            var linkHref = $(this).attr("href");
+            if (!linkHref) return;
+
+            var linkPage = linkHref.split("#")[0].split("/").pop();
+
+            // Check if this link matches current page
+            if (
+              linkPage === currentPage ||
+              (currentPage === "" && linkPage === "index.html") ||
+              (isMilestonePage &&
+                linkHref.includes("milestone") &&
+                currentPage === linkPage) ||
+              (isSoftwarePage &&
+                linkHref.includes("software") &&
+                currentPage === linkPage)
+            ) {
+              $(this).addClass("active");
+            }
+          });
+
+          // Add decorative robot image to sidebar
+          if ($(".sidebar-decorative-image").length === 0) {
+            $(".sidebar-nav").after(
+              '<div class="sidebar-decorative-image"><img src="images/mapping.jpg" alt="Robot doodle" /></div>'
+            );
+          }
+        }
+
+        // Try to set up navigation immediately, and also after a short delay to ensure header is loaded
+        setTimeout(setupNavigation, 100);
+        setTimeout(setupNavigation, 500);
+      });
+    </script>
+  </head>
+
+  <body>
     <div id="header"></div>
     <main class="main-content">
-        <div class="content-wrapper">
-            <h1>Mapping</h1>
-            <p>In the mapping mode, the robot explores and creates a 2D LIDAR SLAM map of its environment for the cleaning mode to use. It does this by taking in the existing partial SLAM map of the environment and finding the best 'frontier' between empty and unexplored space based on distance from the robot and its value for exploration. The robot iteratively travels to this point and finds new points to travel to until the map is filled and can be saved.</p>
-            
-            <h2>Architecture</h2>
-            <p>This is a program flow diagram for the main mapping node and its dependencies. The mapping node handles the overall flow of the program and algorithm and calls the necessary methods. The SLAM algorithm, in this case the ROS SLAM toolbox, handles the generation and saving of the map, and the odometry localization on the map being generated. The A* path planning function is used to see if points are accessible by the robot, and if so, how to get there. The waypoint following node follows the path to the next frontier and gives feedback to the mapping node. It also handles unexpected obstacles in the path.</p>
-            
-            <h2>Algorithm</h2>
-            <p>
-                <img src="images/image6.jpg" alt="Mapping Algorithm" style="max-width: 100%; height: auto;" />
-            </p>
-            <p>The general algorithm used by the mapping node works as follows:</p>
-            <ol>
-                <li>Start with the initial 2D LIDAR map grid</li>
-                <li>Create a list of points on the most recent map grid with unexplored space where the robot can physically be</li>
-                <li>Weight these points based on an ideal distance away from the robot and the percentage of unexplored vs. empty space in the area around them</li>
-                <li>Sort the list of points by weight, including some randomness</li>
-                <li>Select the first point in the list that is accessible by the robot, according to A*, and request the waypoint server to travel to that point</li>
-                <li>Wait until the robot has almost reached the next waypoint or the waypoint following fails</li>
-                <li>If no frontiers are found or accessible, save the map and end the mapping node</li>
-                <li>Otherwise, return to step 2</li>
-            </ol>
-            
-            <h2>Limitations and Future Work</h2>
-            <p>There are many optimizations and improvements to be made to the mapping node. Firstly, the mapping node assumes a static environment; a different implementation of SLAM could be used to account for people and pets. The mapping node could also take into account the bump sensor; some obstacles cannot be seen by the LIDAR even if the robot cannot get over them. These challenges would also necessitate improvements to the decision to save the map, as the whole map might not appear explored even if the robot could not reach certain areas.</p>
-            <p>The frontier selection could also be made more efficient, taking a machine learning-based approach to ranking frontiers rather than simple heuristics like distance. It might also make sense to be able to change the path planning during execution if it is more efficient to do so, rather than waiting to reach the previously sent frontier before reevaluating its goal.</p>
-        </div>
-    </main>
-</body>
-</html>
+      <div class="content-wrapper">
+        <h1>Mapping</h1>
+        <p>
+          In the mapping mode, the robot explores and creates a 2D LIDAR SLAM
+          map of its environment for the cleaning mode to use. It does this by
+          taking in the existing partial SLAM map of the environment and finding
+          the best 'frontier' between empty and unexplored space based on
+          distance from the robot and its value for exploration. The robot
+          iteratively travels to this point and finds new points to travel to
+          until the map is filled and can be saved.
+        </p>
+        <p>
+          <img src="images/mapping.gif" alt="Mapping Algorithm" class="content-img" />
+        </p>
+        <h2>Architecture</h2>
+        <p>
+          This is a program flow diagram for the main mapping node and its
+          dependencies. The mapping node handles the overall flow of the program
+          and algorithm and calls the necessary methods. The SLAM algorithm, in
+          this case the ROS SLAM toolbox, handles the generation and saving of
+          the map, and the odometry localization on the map being generated. The
+          A* path planning function is used to see if points are accessible by
+          the robot, and if so, how to get there. The waypoint following node
+          follows the path to the next frontier and gives feedback to the
+          mapping node. It also handles unexpected obstacles in the path.
+        </p>
 
+        <h2>Algorithm</h2>
+        <p>
+          <img src="images/image6.jpg" alt="Mapping Algorithm" class="content-img" />
+        </p>
+        <p>The general algorithm used by the mapping node works as follows:</p>
+        <ol>
+          <li>Start with the initial 2D LIDAR map grid</li>
+          <li>
+            Create a list of points on the most recent map grid with unexplored
+            space where the robot can physically be
+          </li>
+          <li>
+            Weight these points based on an ideal distance away from the robot
+            and the percentage of unexplored vs. empty space in the area around
+            them
+          </li>
+          <li>Sort the list of points by weight, including some randomness</li>
+          <li>
+            Select the first point in the list that is accessible by the robot,
+            according to A*, and request the waypoint server to travel to that
+            point
+          </li>
+          <li>
+            Wait until the robot has almost reached the next waypoint or the
+            waypoint following fails
+          </li>
+          <li>
+            If no frontiers are found or accessible, save the map and end the
+            mapping node
+          </li>
+          <li>Otherwise, return to step 2</li>
+        </ol>
+
+        <h2>Limitations and Future Work</h2>
+        <p>
+          There are many optimizations and improvements to be made to the
+          mapping node. Firstly, the mapping node assumes a static environment;
+          a different implementation of SLAM could be used to account for people
+          and pets. The mapping node could also take into account the bump
+          sensor; some obstacles cannot be seen by the LIDAR even if the robot
+          cannot get over them. These challenges would also necessitate
+          improvements to the decision to save the map, as the whole map might
+          not appear explored even if the robot could not reach certain areas.
+        </p>
+        <p>
+          The frontier selection could also be made more efficient, taking a
+          machine learning-based approach to ranking frontiers rather than
+          simple heuristics like distance. It might also make sense to be able
+          to change the path planning during execution if it is more efficient
+          to do so, rather than waiting to reach the previously sent frontier
+          before reevaluating its goal.
+        </p>
+      </div>
+    </main>
+  </body>
+</html>

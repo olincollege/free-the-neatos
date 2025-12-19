@@ -292,7 +292,40 @@ a:hover {
 img {
     max-width: 100%;
     height: auto;
-    padding-top: 16px;
-    padding-bottom: 16px;
     border-radius: 0;
+}
+
+/* Content images (better sizing + text flow) */
+.content-img {
+    display: block;
+    margin: 16px auto;
+    max-width: min(100%, 820px);
+}
+
+.content-img--sm {
+    max-width: min(100%, 500px);
+}
+
+.content-img--right {
+    float: right;
+    margin: 8px 0 16px 24px;
+}
+
+.content-img--left {
+    float: left;
+    margin: 8px 24px 16px 0;
+}
+
+@media (max-width: 767px) {
+    .content-img--right,
+    .content-img--left {
+        float: none;
+        margin: 16px auto;
+    }
+}
+
+.content-wrapper::after {
+    content: "";
+    display: block;
+    clear: both;
 }

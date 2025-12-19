@@ -11,8 +11,6 @@ from geometry_msgs.msg import (
     Pose,
     Point,
     Quaternion,
-    Twist,
-    TransformStamped,
 )
 from nav_msgs.msg import Odometry
 from tf2_ros import StaticTransformBroadcaster
@@ -129,7 +127,7 @@ class ExtendedKalmanFilter(Node):
         # publish updated pose
         self.pose_publisher.publish(self.format_pose_msg(self.X, self.P))
 
-        # **ADD THIS: Update the map->odom transform**
+        # update the map to odom transform
         robot_pose = Pose()
         robot_pose.position = Point(x=self.X[0], y=self.X[1], z=0.0)
         quat = quaternion_from_euler(0, 0, self.X[2])
@@ -154,7 +152,7 @@ class ExtendedKalmanFilter(Node):
 
         Args:
             state: current state vector [x, y, theta]
-            vel_cmd: control input vector [v, omega]
+            vel_cmd: control input vector [ds, d]
 
         Returns:
             x_next: predicted next state vector [x, y, theta]
@@ -162,38 +160,38 @@ class ExtendedKalmanFilter(Node):
         """
 
         # predict next state using motion model
-        x_next = X[0] + u[0] * math.cos(X[2] + u[1] / 2)
-        y_next = X[1] + u[0] * math.sin(X[2] + u[1] / 2)
+        x_next = X[0] + u[0] * math.cos(X[2] + u[1]/2)
+        y_next = X[1] + u[0] * math.sin(X[2] + u[1]/2)
         theta_next = X[2] + u[1]
 
         # wrap theta
         theta_next = self.tf_helper.angle_normalize(theta_next)
-
+        
         # formulate into array
         X_pred_next = np.array([x_next, y_next, theta_next])
 
-        # Updated Jacobian for arc motion
+        # Jacobian wrt state
         F = np.array(
             [
-                [1, 0, -u[0] * math.sin(X[2] + u[1] / 2)],
-                [0, 1, u[0] * math.cos(X[2] + u[1] / 2)],
-                [0, 0, 1],
+                [1, 0, -u[0] * math.sin(X[2] + u[1]/2)],
+                [0, 1,  u[0] * math.cos(X[2] + u[1]/2)],
+                [0, 0, 1]
             ]
         )
 
         # Jacobian wrt control
         L = np.array(
             [
-                [math.cos(X[2] + u[1] / 2), -0.5 * u[0] * math.sin(X[2] + u[1] / 2)],
-                [math.sin(X[2] + u[1] / 2), 0.5 * u[0] * math.cos(X[2] + u[1] / 2)],
-                [0, 1],
+                [math.cos(X[2] + u[1]/2), -0.5 * u[0] * math.sin(X[2] + u[1]/2)],
+                [math.sin(X[2] + u[1]/2),  0.5 * u[0] * math.cos(X[2] + u[1]/2)],
+                [0, 1]
             ]
         )
 
-        # Velocity-dependent noise
-        sigma_v = 0.05
-        sigma_w = np.deg2rad(5)
-        M = np.diag([sigma_v**2, sigma_w**2])
+        # constructing motion model covariance
+        ds_std = 0.04
+        dtheta_std = np.deg2rad(10)
+        M = np.diag([ds_std**2, ds_std**2, dtheta_std**2])
 
         Q = L @ M @ L.T
         P_pred_next = F @ P @ F.T + Q
@@ -217,14 +215,11 @@ class ExtendedKalmanFilter(Node):
         H = np.eye(3)  # measurement matrix
         y = X_measured - (H @ X_pred_next)  # measurement residual
         y[2] = self.tf_helper.angle_normalize(y[2])  # normalize angle difference
-
-        # Increase uncertainty with velocity
-        pos_std = 0.2
-        ang_std = np.deg2rad(15)
-
-        R = np.diag(
-            [pos_std**2, pos_std**2, ang_std**2]
-        )  # measurement noise covariance, tune as needed
+        
+        # constructing measurement noise covariance
+        pos_std = 0.1
+        ang_std = np.deg2rad(10)
+        R = np.diag([pos_std**2, pos_std**2, ang_std**2]) # measurement noise covariance, tune as needed
         S = H @ P_pred_next @ H.T + R
 
         K = P_pred_next @ H.T @ np.linalg.inv(S)  # Kalman gain
@@ -274,10 +269,10 @@ class ExtendedKalmanFilter(Node):
             f"ICP:  [{x_icp[0]:.3f}, {x_icp[1]:.3f}, {np.rad2deg(x_icp[2]):.3f}]"
         )
 
-        # Visualize first scan alignment (only once)
-        # if not hasattr(self, '_visualized_first_scan'):
-        #     self._visualize_scan_alignment(scan, x, x_icp)
-        #     self._visualized_first_scan = True
+        # visualize first scan alignment (only once)
+        # if not hasattr(self, 'visualized_first_scan'):
+        #     self.visualize_scan_alignment(scan, x, x_icp)
+        #     self.visualized_first_scan = True
 
         return x_icp
 
@@ -295,7 +290,7 @@ class ExtendedKalmanFilter(Node):
 
         pose_msg = PoseWithCovarianceStamped()
         pose_msg.header.stamp = self.get_clock().now().to_msg()
-        pose_msg.header.frame_id = "map"
+        pose_msg.header.frame_id = self.map_frame
 
         pose_msg.pose.pose.position = Point(x=x[0], y=x[1], z=0.0)
         quat = quaternion_from_euler(0, 0, x[2])
@@ -457,7 +452,7 @@ class ExtendedKalmanFilter(Node):
         plt.show()
         self.get_logger().info("Displayed occupancy field visualization.")
 
-    def _visualize_scan_alignment(self, scan, x_pred, x_icp):
+    def visualize_scan_alignment(self, scan, x_pred, x_icp):
         """Visualize scan alignment for debugging."""
         import matplotlib.pyplot as plt
 

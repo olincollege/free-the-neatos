@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta name="author" content="Stephan Risi">
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <script src="https://code.jquery.com/jquery-3.4.1.min.js" integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js" integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1" crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
+    <title>Cleaning - Free the Neatos</title>
+    <script> $(function(){$("#header").load("header.html");});</script>
+    <link href="css/main.css" rel="stylesheet">
+    <script>
+        // Set up active links and add decorative image after header loads
+        $(document).ready(function() {
+            function setupNavigation() {
+                var currentPage = window.location.pathname.split('/').pop() || 'index.html';
+                var isMilestonePage = currentPage.includes('milestone');
+                var isSoftwarePage = currentPage.includes('software');
+                
+                $('.nav-link').each(function() {
+                    var linkHref = $(this).attr('href');
+                    if (!linkHref) return;
+                    
+                    var linkPage = linkHref.split('#')[0].split('/').pop();
+                    
+                    // Check if this link matches current page
+                    if (linkPage === currentPage || 
+                        (currentPage === '' && linkPage === 'index.html') ||
+                        (isMilestonePage && linkHref.includes('milestone') && currentPage === linkPage) ||
+                        (isSoftwarePage && linkHref.includes('software') && currentPage === linkPage)) {
+                        $(this).addClass('active');
+                    }
+                });
+                
+                // Add decorative robot image to sidebar
+                if ($('.sidebar-decorative-image').length === 0) {
+                    $('.sidebar-nav').after('<div class="sidebar-decorative-image"><img src="images/cleaning.jpg" alt="Robot doodle" /></div>');
+                }
+            }
+
+            // Try to set up navigation immediately, and also after a short delay to ensure header is loaded
+            setTimeout(setupNavigation, 100);
+            setTimeout(setupNavigation, 500);
+        });
+    </script>
+</head>
+
+<body>
+    <div id="header"></div>
+    <main class="main-content">
+        <div class="content-wrapper">
+            <h1>Cleaning</h1>
+            <p>In the cleaning mode, the robot plans and executes a path to cover the entire area of the room, given a map created by the mapping mode. To do this, we used Boustrophedon Cellular Decomposition (BCD) for the coverage path planning. At a high level, BCD breaks the area into cells, then plans a zig zag (lawn mower) path to cover the area of each cell. To get from the end of the previous cell to the start of the next cell, we used A*. More details on these algorithms and the path following is available on the Path Planning and Execution page.</p>
+            <p>Additionally, for localization during cleaning, we developed a custom implementation of an extended kalman filter. More details are available on the Kalman filter page.</p>
+            
+            <h2>Architecture</h2>
+            <p>Here is a diagram of the cleaning mode architecture. There is a main Cleaning node that manages the process. It gets the localization information from kalman filter node, which it uses to path plan with the A* and BCD functions. It calls the Waypoint Following Action server to execute the path.</p>
+            <p>
+                <img src="images/image3.jpg" alt="Cleaning Architecture" style="max-width: 100%; height: auto;" />
+            </p>
+            
+            <h2>Algorithm</h2>
+            <p>Here is the high level algorithm the Cleaning Node follows:</p>
+            <ol>
+                <li>Pull the map from the map server</li>
+                <li>Call BCD with the map to generate the coverage cells and paths</li>
+                <li>Loop through coverage cells
+                    <ol>
+                        <li>Plan a path using A* to get to start of the cell</li>
+                        <li>Execute path with waypoint following action server</li>
+                        <li>If the waypoint following action server is unsuccessful (hits an object), re-plan and execute path</li>
+                        <li>Execute the cell's coverage path with the waypoint following action server</li>
+                        <li>If the waypoint following the server is unsuccessful, plan and execute a path to the 3rd waypoint after the failure. Then resuming cleaning coverage path</li>
+                    </ol>
+                </li>
+            </ol>
+            <p>One key feature of the cleaning is that if the waypoint following server is unsuccessful at following the path, it will either retry by planning a new path or it will resume cleaning the cell a few waypoints later. This maximizes coverage and can handle minor map changes or localization errors.</p>
+            
+            <h2>Limitations and Future Work</h2>
+            <p>Cleaning mode has a few major limitations. First, it currently doesn't clean within a ~foot radius next to obstacles, including around the edge of the room, to prevent crashes. Our implementations of A* and BCD aren't designed for tight tolerances. This could be overcome by adding a new step to the cleaning process which is tracing the perimeter of obstacles and the room first using a proportional controller. This is similar to how real robot vacuums operate.</p>
+            <p>Another constraint is that the path planning and the map are static, so it depends on a constant environment. This is an unrealistic expectation because people and pets exist in a real environment, furniture, such as chairs, frequently move, and people put stuff on the floor. The next step would be dynamic path planning using the real-time lidar data to update the occupancy field in real time and replan if the lidar doesn't match well. We would need to do additional research on algorithms for an approach beyond that.</p>
+            <p>
+                <img src="images/image2.png" alt="Cleaning Limitations" style="max-width: 100%; height: auto;" />
+            </p>
+        </div>
+    </main>
+</body>
+</html>
+

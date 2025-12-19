@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<!--The head contains metadata about our page and it's the place where we can load css files (for -->
+<!--styling) and javascript files.-->
+<head>
+
+    <meta name="author" content="Stephan Risi">
+    <meta charset="utf-8">
+    <!--<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">-->
+
+    <!-- Load JQuery and Bootstrap. They are javascript library that handle the layouting for us.-->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <script src="https://code.jquery.com/jquery-3.4.1.min.js" integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js" integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1" crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
+
+    <!--Set the title for the page-->
+    <title>Milestone 1 - Free the Neatos</title>
+
+    <!-- The nav bar remains the same for every page, so by defining it in only one file, we only
+     need to edit it in one place when we make changes to it. -->
+    <script> $(function(){$("#header").load("header.html");});</script>
+
+    <!-- Import the css file, which defines how our website looks -->
+    <link href="css/main.css" rel="stylesheet">
+
+    <script>
+        // Set up active links after header loads
+        $(document).ready(function() {
+            function setupNavigation() {
+                var currentPage = window.location.pathname.split('/').pop() || 'index.html';
+                var isMilestonePage = currentPage.includes('milestone');
+                var isSoftwarePage = currentPage.includes('software');
+                
+                $('.nav-link').each(function() {
+                    var linkHref = $(this).attr('href');
+                    if (!linkHref) return;
+                    
+                    var linkPage = linkHref.split('#')[0].split('/').pop();
+                    
+                    // Check if this link matches current page
+                    if (linkPage === currentPage || 
+                        (currentPage === '' && linkPage === 'index.html') ||
+                        (isMilestonePage && linkHref.includes('milestone') && currentPage === linkPage) ||
+                        (isSoftwarePage && linkHref.includes('software') && currentPage === linkPage)) {
+                        $(this).addClass('active');
+                    }
+                });
+            }
+
+            // Try to set up navigation immediately, and also after a short delay to ensure header is loaded
+            setTimeout(setupNavigation, 100);
+            setTimeout(setupNavigation, 500);
+        });
+    </script>
+
+</head>
+
+<!--We define the elements that we actually want to display in the body element-->
+<body>
+    <!--This element is a placeholder for the sidebar navigation, which we load above-->
+    <div id="header"></div>
+
+    <!--Main content area-->
+    <main class="main-content">
+        <div class="content-wrapper">
+            <h1>Milestone 1</h1>
+            <p>
+                For the first milestone, we wanted to explore the existing SLAM
+                libraries and create an initial working development environment.
+                Additionally, we also wanted to research approaches to path planning
+                and pick an algorithmic approach.
+            </p>
+
+            <h2>SLAM</h2>
+            <p>
+                We downloaded the
+                <a href="https://wiki.ros.org/slam_toolbox">ROS slam toolbox</a> that
+                uses information from the odom and scan topics to implement a SLAM
+                algorithm. We tested this out in a simulator with the Neato, and
+                afterwards got it to work well on the physical Neato in the MAC. Here
+                is an example of a map of the hallway:
+            </p>
+            <p>
+                <img
+                    src="images/m1_slam_map.png"
+                    alt="Milestone 1 hallway map"
+                    width="400px"
+                />
+            </p>
+            <h2>SLAM Exploration Path Planning</h2>
+            <p>
+                When the robot first starts out, it does not have a map of the
+                surrounding area. A map will eventually be created using SLAM, but for
+                this map to be created, the robot needs to explore its environment.
+                This will be done by directing the robot to pathfind to different
+                frontiers, or delineated lines between open and unexplored areas
+                (respectively white and grey-blue on the SLAM map above). The
+                algorithm will prioritize frontiers that are larger and/or closer to
+                the robot, and the pathfinding to these frontiers will be done using a
+                standard algorithm like A*.
+            </p>
+
+            <h2>Coverage Path Planning</h2>
+            <p>
+                Once we have generated a map of the space, we want the Neato to drive
+                and cover all the area as efficiently as possible, so the entire floor
+                is cleaned (in spirit). There are many approaches to do this, such as
+                a spiral around the room, kind of like mowing the lawn. We decided to
+                use Boustrophedon Decomposition (BD). This takes a discrete map,
+                creates sections of the floor between the obstacles, and drives over
+                each section with "S"s before moving onto the next section. Example:
+            </p>
+            <p>
+                <img
+                    src="images/m1_path_planning.gif"
+                    alt="Gif showing path planning"
+                    width="450px"
+                />
+            </p>
+            <p>
+                Taking a discrete map, we will section it using BD. We will then use
+                A* to move between two sections to the next step. Here's an example of
+                the process on an actual cleaning robot simulation:
+            </p>
+            <p>
+                <img
+                    src="images/m1_cleanbot.gif"
+                    alt="Gif showing cleaning path planning"
+                    width="450px"
+                />
+            </p>
+
+            <h2>Setup Status</h2>
+            <p>
+                We are doing a Neato-based project, so the computational setup is the
+                same as the first part of the course. As such, everyone is already set
+                up. We also have a shared repo, which is where this website is hosted.
+            </p>
+
+            <h2>Project Components</h2>
+            <p>
+                There are two main modes the robot will operate in. The first is
+                mapping when it is introduced into a new space. Then, once it has
+                mapped the environment, it can run the cleaning mode.
+            </p>
+
+            <h3>Mapping:</h3>
+            <ul>
+                <li>
+                    SLAM - Andrew - Use the ROS slam toolbox. Basic testing has been
+                    completed
+                </li>
+                <li>
+                    Exploration pathplanning - Franklin - Researching
+                    math/implementations
+                </li>
+                <li>Kalman filter for improved odom - Jojo - Researching math</li>
+            </ul>
+
+            <h3>Cleaning:</h3>
+            <ul>
+                <li>Kalman filter for improved odom - Jojo - Researching math</li>
+                <li>
+                    Particle filter/AMCL for localization - TBD - Will use either a
+                    particle filter from project 2 or AMCL ROS package
+                </li>
+                <li>
+                    Path planning: Andrew and Cian
+                    <ul>
+                        <li>
+                            Boustrophedon Decomposition (BD) - Initial research completed to
+                            choose the method
+                        </li>
+                        <li>A* - Already have a conceptual overview</li>
+                        <li>Robot commands to traverse between 2 points</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <h2>MVP and Stretch Goals</h2>
+            <p>
+                Our MVP is still on track to be a working simulator implementation
+                with all the algorithmic steps above. Since our proposal, we have
+                included using a particle filter for localization.
+            </p>
+            <p>
+                For stretch goals, we will bring more of the algorithms in-house. We
+                are considering implementing 2D SLAM or modifying one of our own
+                particle filter implementations from a previous project instead of
+                using the ROS packages.
+            </p>
+
+            <h2>Risks of Reaching MVP</h2>
+            <p>
+                One risk is depending on the SLAM toolbox. If the map isn't accurate
+                enough, then the path planning during the exploration and cleaning
+                steps will be wrong. Also, there is a chance that the SLAM toolboxes'
+                localization isn't accurate enough, which will make the exploration
+                more challenging as well. We are hoping to mitigate both risks with a
+                Kalman filter to improve the odometry.
+            </p>
+            <p>
+                Another risk is the algorithmic complexity of Boustrophedon
+                Decomposition for the cleaning path planning. It may be too
+                challenging to get a working implementation in the needed time. If
+                this is the case, we will explore simpler space coverage path planning
+                algorithms.
+            </p>
+
+            <h2>Milestone 2 Goals</h2>
+            <ul>
+                <li>
+                    SLAM Exploration – Create a testing/visualization setup and be able
+                    to identify + rank individual frontiers on a SLAM map
+                </li>
+                <li>
+                    Kalman Filter - Write a working implementation of a Kalman filter
+                    for a toy environment
+                </li>
+                <li>
+                    Cleaning path planning - Be partway through implementing the
+                    cleaning pipeline
+                </li>
+                <li>
+                    Overall path planning - Implement and test A* on real Neato in real
+                    environment
+                </li>
+            </ul>
+        </div>
+    </main>
+</body>
+</html>
+
